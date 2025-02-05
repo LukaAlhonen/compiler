@@ -16,14 +16,6 @@ impl PartialEq for Location {
 }
 
 impl Location {
-    // pub fn new<S: Into<String>>(file: S, line: S, column: S) -> Self {
-    //     Location {
-    //         file: file.into(),
-    //         line: line.into(),
-    //         column: column.into(),
-    //     }
-    // }
-
     // Used for testing, "special" loc is equal to all other loc structs
     pub fn special() -> Self {
         Location {
@@ -38,11 +30,16 @@ impl Location {
             && self.line == "SPECIAL".to_string()
             && self.column == "SPECIAL".to_string()
     }
+
+    pub fn to_string(&self) -> String {
+        format!("{}:{}:{}", self.file, self.line, self.column)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Integer,
+    Boolean,
     Operator,
     Punctuation,
     Identifier,
@@ -53,6 +50,7 @@ impl ToString for TokenType {
     fn to_string(&self) -> String {
         match self {
             TokenType::Integer => String::from("Integer"),
+            TokenType::Boolean => String::from("Boolean"),
             TokenType::Operator => String::from("Operator"),
             TokenType::Identifier => String::from("Identifier"),
             TokenType::Punctuation => String::from("Punctuation"),
@@ -67,31 +65,6 @@ pub struct Token {
     pub token_type: TokenType,
     pub loc: Location,
 }
-
-// impl Token {
-//     pub fn new<S: Into<String>>(text: S, token_type: TokenType, loc: Location) -> Self {
-//         Token {
-//             text: text.into(),
-//             token_type,
-//             loc,
-//         }
-//     }
-//
-//     // Return the content of token
-//     pub fn get_text(&self) -> &String {
-//         &self.text
-//     }
-//
-//     // Return type of token
-//     pub fn get_type(&self) -> &TokenType {
-//         &self.token_type
-//     }
-//
-//     // Return location of token
-//     pub fn get_loc(&self) -> &Location {
-//         &self.loc
-//     }
-// }
 
 pub fn tokenize(source_code: &str, file_name: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
@@ -113,9 +86,15 @@ pub fn tokenize(source_code: &str, file_name: &str) -> Vec<Token> {
         // Match each capture group of regex and push token with coresponding type onto tokens vec
         for mat in re.captures_iter(line) {
             if let Some(identifier) = mat.get(1) {
+                let text = identifier.as_str();
+                let token_type = if text == "true" || text == "false" {
+                    TokenType::Boolean
+                } else {
+                    TokenType::Identifier
+                };
                 tokens.push(Token {
-                    text: identifier.as_str().to_string(),
-                    token_type: TokenType::Identifier,
+                    text: text.to_string(),
+                    token_type,
                     loc: Location {
                         file: file_name.to_string(),
                         line: (line_number + 1).to_string(),

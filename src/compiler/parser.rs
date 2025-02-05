@@ -1,5 +1,8 @@
+use std::string::ParseError;
+
 use super::ast::*;
 use super::tokenizer::{Location, Token, TokenType};
+use anyhow::{anyhow, Error, Result};
 
 enum Expected {
     Single(String),
@@ -12,9 +15,33 @@ pub enum ParserError {
     UnexpectedToken {
         location: Location,
         expected: String,
+        found: String,
     },
     InvalidInteger(String),
+    InvalidBoolean(String),
 }
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnexpectedToken {
+                location,
+                expected,
+                found,
+            } => write!(
+                f,
+                "Unexpected token at {}\texpected {}, found {}",
+                location.to_string(),
+                expected,
+                found
+            ),
+            Self::InvalidInteger(i) => write!(f, "{} is not a valid integer", i),
+            Self::InvalidBoolean(b) => write!(f, "{} is not a valid boolean", b),
+        }
+    }
+}
+
+impl std::error::Error for ParserError {}
 
 pub struct Parser {
     pos: i32,
@@ -60,24 +87,26 @@ impl Parser {
 
     // Get token at current pos and move pos one step forward
     // expected can hold None, String, or Vec<String>
-    fn consume(&mut self, exptected: Expected) -> Result<Token, ParserError> {
+    fn consume_expect(&mut self, exptected: Expected) -> Result<Token, Error> {
         let token: Token = self.peek();
 
         match exptected {
             Expected::Single(s) => {
                 if s != token.text {
-                    return Err(ParserError::UnexpectedToken {
+                    return Err(anyhow!(ParserError::UnexpectedToken {
                         location: token.loc,
                         expected: s,
-                    });
+                        found: token.text,
+                    }));
                 }
             }
             Expected::Multiple(v) => {
                 if !v.contains(&token.text) {
-                    return Err(ParserError::UnexpectedToken {
+                    return Err(anyhow!(ParserError::UnexpectedToken {
                         location: token.loc,
                         expected: v.join(", "),
-                    });
+                        found: token.text
+                    }));
                 }
             }
             Expected::None => {}
@@ -86,82 +115,159 @@ impl Parser {
         Ok(token)
     }
 
+    fn consume(&mut self) -> Result<Token, Error> {
+        self.consume_expect(Expected::None)
+    }
+
     // Parse the token at current pos into int literal, expects token to be of type Integer
-    fn parse_int_literal(&mut self) -> Result<Literal, ParserError> {
+    fn parse_int_literal(&mut self) -> Result<Literal, Error> {
         let token = self.peek();
 
         match token.token_type {
             TokenType::Integer => {
                 // parse int, if it fails, map the error onto ParserError
                 let int_val = self
-                    .consume(Expected::None)?
+                    .consume()?
                     .text
                     .parse::<i32>()
-                    .map_err(|_| ParserError::InvalidInteger(token.text))?;
+                    .map_err(|_| anyhow!(ParserError::InvalidInteger(token.text)))?;
                 Ok(Literal {
                     value: int_val.into(),
                 })
             }
-            _ => Err(ParserError::UnexpectedToken {
+            _ => Err(anyhow!(ParserError::UnexpectedToken {
                 location: token.loc,
                 expected: TokenType::Integer.to_string(),
-            }),
+                found: token.text
+            })),
+        }
+    }
+
+    fn parse_bool_literal(&mut self) -> Result<Literal, Error> {
+        let token = self.peek();
+
+        match token.token_type {
+            TokenType::Boolean => {
+                let bool_val = self
+                    .consume()?
+                    .text
+                    .parse::<bool>()
+                    .map_err(|_| anyhow!(ParserError::InvalidBoolean(token.text)))?;
+                Ok(Literal {
+                    value: bool_val.into(),
+                })
+            }
+            _ => Err(anyhow!(ParserError::UnexpectedToken {
+                location: token.loc,
+                expected: TokenType::Boolean.to_string(),
+                found: token.text
+            })),
         }
     }
 
     // Get identifier at current pos, expects token to be identifier
-    fn parse_identifier(&mut self) -> Result<Identifier, ParserError> {
+    fn parse_identifier(&mut self) -> Result<Identifier, Error> {
         let token = self.peek();
 
         match token.token_type {
             TokenType::Identifier => {
-                let identifier = self.consume(Expected::None)?;
-
+                let identifier = self.consume()?;
                 Ok(Identifier {
                     name: identifier.text,
                 })
             }
-            _ => Err(ParserError::UnexpectedToken {
+            _ => Err(anyhow!(ParserError::UnexpectedToken {
                 location: token.loc,
                 expected: TokenType::Identifier.to_string(),
-            }),
+                found: token.text
+            })),
         }
     }
 
+    fn parse_function_call(&mut self, name: Identifier) -> Result<FunctionCall, Error> {
+        self.consume_expect(Expected::Single("(".to_string()))?;
+        let mut args = vec![];
+        while self.peek().text != ")".to_string() {
+            args.push(self.parse_expression()?);
+            if self.peek().text != ")".to_string() {
+                self.consume_expect(Expected::Single(",".to_string()))?;
+            }
+        }
+        self.consume_expect(Expected::Single(")".to_string()))?;
+        Ok(FunctionCall { name, args })
+    }
+
+    // Parser if statemetn and returns If
+    fn parse_if(&mut self) -> Result<Box<dyn Expression>, Error> {
+        // Get rid of "if" token, return error if for some reason it has disappeared 😱
+        self.consume_expect(Expected::Single("if".to_string()))?;
+        // Parse expression that should produce boolean value
+        let cond = self.parse_expression()?;
+        // Get rid of "then" token
+        self.consume_expect(Expected::Single("then".to_string()))?;
+        //
+        let then = self.parse_expression()?;
+        let if_else = if self.peek().text == "else".to_string() {
+            self.consume_expect(Expected::Single("else".to_string()))?;
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        Ok(Box::new(If {
+            cond,
+            then,
+            if_else,
+        }))
+    }
+
     // Get expression inside paranthesis, expects epxression to be wrapped in ()
-    fn parse_parenthesized(&mut self) -> Result<Box<dyn Expression>, ParserError> {
-        self.consume(Expected::Single("(".to_string()))?;
+    fn parse_parenthesized(&mut self) -> Result<Box<dyn Expression>, Error> {
+        self.consume_expect(Expected::Single("(".to_string()))?;
 
         let expr = self.parse_expression()?;
-        self.consume(Expected::Single(")".to_string()))?;
+        self.consume_expect(Expected::Single(")".to_string()))?;
         Ok(expr)
     }
 
     // Get int literal, identifier or epxression in parenthises at current pos
-    fn parse_factor(&mut self) -> Result<Box<dyn Expression>, ParserError> {
+    fn parse_factor(&mut self) -> Result<Box<dyn Expression>, Error> {
         let token: Token = self.peek();
 
         if token.text == "(" {
             Ok(self.parse_parenthesized()?)
+        } else if token.text == "if" {
+            Ok(self.parse_if()?)
         } else {
             match token.token_type {
                 TokenType::Integer => Ok(Box::new(self.parse_int_literal()?)),
-                TokenType::Identifier => Ok(Box::new(self.parse_identifier()?)),
-                _ => Err(ParserError::UnexpectedToken {
-                    location: token.loc.clone(),
+                TokenType::Identifier => {
+                    let identifier = self.parse_identifier()?;
+                    // If next token after identifier is "(" then expression has to be function call
+                    if self.peek().text == "(".to_string() {
+                        Ok(Box::new(self.parse_function_call(identifier)?))
+                    } else {
+                        Ok(Box::new(identifier))
+                    }
+                }
+                TokenType::Boolean => Ok(Box::new(self.parse_bool_literal()?)),
+                _ => Err(anyhow!(ParserError::UnexpectedToken {
+                    location: token.loc,
                     expected: "Integer or Identifier".to_string(),
-                }),
+                    found: token.text
+                })),
             }
         }
     }
 
     // get expression in for of Expression * Expression or Expression / Expression
     // left assiciative
-    fn parse_term(&mut self) -> Result<Box<dyn Expression>, ParserError> {
+    fn parse_term(&mut self) -> Result<Box<dyn Expression>, Error> {
         let mut left = self.parse_factor()?;
 
         while ["*".to_string(), "/".to_string()].contains(&self.peek().text) {
-            let op = self.consume(Expected::None)?.text;
+            let op = self
+                .consume_expect(Expected::Multiple(vec!["*".to_string(), "/".to_string()]))?
+                .text;
             let right = self.parse_factor()?;
             left = Box::new(BinaryOp { left, op, right });
         }
@@ -171,11 +277,13 @@ impl Parser {
 
     // get expression in for of Expression + Expression or Expression - Expression
     // left assiciative
-    fn parse_expression(&mut self) -> Result<Box<dyn Expression>, ParserError> {
+    fn parse_expression(&mut self) -> Result<Box<dyn Expression>, Error> {
         let mut left = self.parse_term()?;
 
         while ["+".to_string(), "-".to_string()].contains(&self.peek().text) {
-            let op = self.consume(Expected::None)?.text;
+            let op = self
+                .consume_expect(Expected::Multiple(vec!["+".to_string(), "-".to_string()]))?
+                .text;
             let right = self.parse_term()?;
             left = Box::new(BinaryOp { left, op, right });
         }
@@ -183,17 +291,18 @@ impl Parser {
         Ok(left)
     }
 
-    pub fn parse(&mut self) -> Result<Box<dyn Expression>, ParserError> {
+    pub fn parse(&mut self) -> Result<Box<dyn Expression>, Error> {
         let expr = self.parse_expression()?;
 
         // Make sure the whole input has been parsed, if it has then peek() will return End token
         // If not, return error
         let token: Token = self.peek();
         if token.token_type != TokenType::End {
-            return Err(ParserError::UnexpectedToken {
+            return Err(anyhow!(ParserError::UnexpectedToken {
                 location: token.loc,
                 expected: TokenType::End.to_string(),
-            });
+                found: token.text,
+            }));
         }
 
         Ok(expr)
@@ -235,7 +344,7 @@ mod test {
                 token_type: TokenType::Integer,
                 loc: Location::special(),
             },
-            p.consume(Expected::Single(exp_single)).unwrap(),
+            p.consume_expect(Expected::Single(exp_single)).unwrap(),
         );
         assert_eq!(
             Token {
@@ -243,7 +352,7 @@ mod test {
                 token_type: TokenType::Operator,
                 loc: Location::special(),
             },
-            p.consume(Expected::Multiple(exp_mult)).unwrap()
+            p.consume_expect(Expected::Multiple(exp_mult)).unwrap()
         );
     }
 
@@ -254,7 +363,7 @@ mod test {
         let mut p: Parser = Parser::new(tokens);
         let exp: String = "-".to_string();
 
-        p.consume(Expected::Single(exp)).unwrap();
+        p.consume_expect(Expected::Single(exp)).unwrap();
     }
 
     #[test]
@@ -271,7 +380,7 @@ mod test {
             "b".to_string(),
         ];
 
-        p.consume(Expected::Multiple(exp)).unwrap();
+        p.consume_expect(Expected::Multiple(exp)).unwrap();
     }
 
     #[test]
@@ -349,7 +458,6 @@ mod test {
     fn test_parse_parenthesized_panic() {
         let tokens = tokenize("2 (3 * 4", "file.txt");
         let mut p = Parser::new(tokens);
-
         p.parse_parenthesized().unwrap();
     }
 }

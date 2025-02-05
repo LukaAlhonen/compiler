@@ -69,8 +69,237 @@ mod test {
     #[should_panic]
     fn test_parse_panic() {
         let tokens = tokenize("a * 2 c", "file.txt");
-        let mut p: Parser = Parser::new(tokens.clone());
+        let mut p: Parser = Parser::new(tokens);
 
         p.parse().unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_parse_comma_panic() {
+        let tokens = tokenize("a, b, c", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        p.parse().unwrap();
+    }
+
+    #[test]
+    fn test_parse_if() {
+        let tokens = tokenize("if a then b + c", "file.txt");
+        let mut p: Parser = Parser::new(tokens);
+
+        let expected = If {
+            cond: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+            then: Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+                op: "+".to_string(),
+                right: Box::new(Identifier {
+                    name: "c".to_string(),
+                }),
+            }),
+            if_else: None,
+        };
+
+        assert_eq!(
+            expected,
+            *p.parse().unwrap().as_any().downcast_ref::<If>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_if_else() {
+        let tokens = tokenize("if a then b + c else b * c", "file.txt");
+        let mut p: Parser = Parser::new(tokens);
+
+        let expected = If {
+            cond: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+            then: Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+                op: "+".to_string(),
+                right: Box::new(Identifier {
+                    name: "c".to_string(),
+                }),
+            }),
+            if_else: Some(Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+                op: "*".to_string(),
+                right: Box::new(Identifier {
+                    name: "c".to_string(),
+                }),
+            })),
+        };
+
+        assert_eq!(
+            expected,
+            *p.parse().unwrap().as_any().downcast_ref::<If>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_embedded_if() {
+        let tokens = tokenize("1 + if true then 2 else 3", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        let expected = BinaryOp {
+            left: Box::new(Literal { value: 1.into() }),
+            op: "+".to_string(),
+            right: Box::new(If {
+                cond: Box::new(Literal { value: true.into() }),
+                then: Box::new(Literal { value: 2.into() }),
+                if_else: Some(Box::new(Literal { value: 3.into() })),
+            }),
+        };
+        let parsed = p.parse().unwrap();
+
+        assert_eq!(
+            expected,
+            *parsed.as_any().downcast_ref::<BinaryOp>().unwrap()
+        )
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_parse_if_panic() {
+        let tokens = tokenize("1 + if true then", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        p.parse().unwrap();
+    }
+
+    #[test]
+    fn test_parse_nested_if() {
+        let tokens = tokenize("if a then if b then c else d else e", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        let expected = If {
+            cond: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+            then: Box::new(If {
+                cond: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+                then: Box::new(Identifier {
+                    name: "c".to_string(),
+                }),
+                if_else: Some(Box::new(Identifier {
+                    name: "d".to_string(),
+                })),
+            }),
+            if_else: Some(Box::new(Identifier {
+                name: "e".to_string(),
+            })),
+        };
+
+        let parsed = p.parse().unwrap();
+
+        assert_eq!(expected, *parsed.as_any().downcast_ref::<If>().unwrap());
+    }
+
+    #[test]
+    fn test_parse_function() {
+        let tokens1 = tokenize("a(1, 2, 3)", "file.txt");
+        let tokens2 = tokenize("b(c, d, e)", "file.txt");
+        let tokens3 = tokenize("c()", "file.txt");
+        let tokens4 = tokenize("d(1 + 2, if true then 3 else 1)", "file.txt");
+
+        let mut p = Parser::new(tokens1);
+        let expected1 = FunctionCall {
+            name: Identifier {
+                name: "a".to_string(),
+            },
+            args: vec![
+                Box::new(Literal { value: 1.into() }),
+                Box::new(Literal { value: 2.into() }),
+                Box::new(Literal { value: 3.into() }),
+            ],
+        };
+        assert_eq!(
+            expected1,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<FunctionCall>()
+                .unwrap()
+        );
+
+        p = Parser::new(tokens2);
+        let expected2 = FunctionCall {
+            name: Identifier {
+                name: "b".to_string(),
+            },
+            args: vec![
+                Box::new(Identifier {
+                    name: "c".to_string(),
+                }),
+                Box::new(Identifier {
+                    name: "d".to_string(),
+                }),
+                Box::new(Identifier {
+                    name: "e".to_string(),
+                }),
+            ],
+        };
+        assert_eq!(
+            expected2,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<FunctionCall>()
+                .unwrap()
+        );
+
+        p = Parser::new(tokens3);
+        let expected3 = FunctionCall {
+            name: Identifier {
+                name: "c".to_string(),
+            },
+            args: vec![],
+        };
+        assert_eq!(
+            expected3,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<FunctionCall>()
+                .unwrap()
+        );
+
+        p = Parser::new(tokens4);
+        let expected4 = FunctionCall {
+            name: Identifier {
+                name: "d".to_string(),
+            },
+            args: vec![
+                Box::new(BinaryOp {
+                    left: Box::new(Literal { value: 1.into() }),
+                    op: "+".to_string(),
+                    right: Box::new(Literal { value: 2.into() }),
+                }),
+                Box::new(If {
+                    cond: Box::new(Literal { value: true.into() }),
+                    then: Box::new(Literal { value: 3.into() }),
+                    if_else: Some(Box::new(Literal { value: 1.into() })),
+                }),
+            ],
+        };
+        assert_eq!(
+            expected4,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<FunctionCall>()
+                .unwrap()
+        );
     }
 }

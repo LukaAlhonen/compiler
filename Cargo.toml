@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 regex = "1.11.1"
+anyhow = { version = "1.0", features = ["backtrace"] }
 
 [[bin]]
 name = "compiler"

@@ -106,3 +106,71 @@ impl PartialEq for BinaryOp {
         self.left.eq_expr(&*other.left) && self.op == other.op && self.right.eq_expr(&*other.right)
     }
 }
+
+#[derive(Debug)]
+pub struct If {
+    pub cond: Box<dyn Expression>,
+    pub then: Box<dyn Expression>,
+    pub if_else: Option<Box<dyn Expression>>, // TODO: Find better name
+}
+
+impl Expression for If {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq_expr(&self, other: &dyn Expression) -> bool {
+        other.as_any().downcast_ref::<If>().map_or(false, |other| {
+            let cond_eq = self.cond.eq_expr(&*other.cond);
+            let then_eq = self.then.eq_expr(&*other.then);
+            let if_else_eq = self
+                .if_else
+                .as_ref()
+                .map_or(other.if_else.is_none(), |self_else| {
+                    other
+                        .if_else
+                        .as_ref()
+                        .map_or(false, |other_else| self_else.eq_expr(&**other_else))
+                });
+            cond_eq && then_eq && if_else_eq
+        })
+    }
+}
+
+impl PartialEq for If {
+    fn eq(&self, other: &Self) -> bool {
+        let cond_eq = self.cond.eq_expr(&*other.cond);
+        let then_eq = self.then.eq_expr(&*other.then);
+        let if_else_eq = self
+            .if_else
+            .as_ref()
+            .map_or(other.if_else.is_none(), |self_else| {
+                other
+                    .if_else
+                    .as_ref()
+                    .map_or(false, |other_else| self_else.eq_expr(&**other_else))
+            });
+        cond_eq && then_eq && if_else_eq
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FunctionCall {
+    pub name: Identifier,
+    pub args: Vec<Box<dyn Expression>>,
+}
+
+impl Expression for FunctionCall {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq_expr(&self, other: &dyn Expression) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<FunctionCall>()
+            .map_or(false, |other| {
+                self.name == other.name && self.args == other.args
+            })
+    }
+}
