@@ -302,4 +302,143 @@ mod test {
                 .unwrap()
         );
     }
+
+    #[test]
+    fn test_parse_or() {
+        let tokens = tokenize("true or false", "file.txt");
+
+        let mut p: Parser = Parser::new(tokens);
+
+        let expected = BinaryOp {
+            left: Box::new(Literal { value: true.into() }),
+            op: "or".to_string(),
+            right: Box::new(Literal {
+                value: false.into(),
+            }),
+        };
+
+        assert_eq!(
+            expected,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryOp>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_if_or() {
+        let tokens = tokenize(
+            "if a == 2 + 2 or b == 2 + 2 then a + 2 else b + 2",
+            "file.txt",
+        );
+
+        let mut p: Parser = Parser::new(tokens);
+
+        let expected = If {
+            cond: Box::new(BinaryOp {
+                left: Box::new(BinaryOp {
+                    left: Box::new(Identifier {
+                        name: "a".to_string(),
+                    }),
+                    op: "==".to_string(),
+                    right: Box::new(BinaryOp {
+                        left: Box::new(Literal { value: 2.into() }),
+                        op: "+".to_string(),
+                        right: Box::new(Literal { value: 2.into() }),
+                    }),
+                }),
+                op: "or".to_string(),
+                right: Box::new(BinaryOp {
+                    left: Box::new(Identifier { name: "b".into() }),
+                    op: "==".into(),
+                    right: Box::new(BinaryOp {
+                        left: Box::new(Literal { value: 2.into() }),
+                        op: "+".to_string(),
+                        right: Box::new(Literal { value: 2.into() }),
+                    }),
+                }),
+            }),
+            then: Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "a".to_string(),
+                }),
+                op: "+".to_string(),
+                right: Box::new(Literal { value: 2.into() }),
+            }),
+            if_else: Some(Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+                op: "+".to_string(),
+                right: Box::new(Literal { value: 2.into() }),
+            })),
+        };
+
+        assert_eq!(
+            expected,
+            *p.parse().unwrap().as_any().downcast_ref::<If>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_binary_op_precedence() {
+        let tokens = tokenize("a = 2 + 3 * 4", "file.txt");
+        let mut p: Parser = Parser::new(tokens);
+        let expected = BinaryOp {
+            left: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+            op: "=".to_string(),
+            right: Box::new(BinaryOp {
+                left: Box::new(Literal { value: 2.into() }),
+                op: "+".to_string(),
+                right: Box::new(BinaryOp {
+                    left: Box::new(Literal { value: 3.into() }),
+                    op: "*".to_string(),
+                    right: Box::new(Literal { value: 4.into() }),
+                }),
+            }),
+        };
+        assert_eq!(
+            expected,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryOp>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_assignment() {
+        let tokens = tokenize("a = b = c", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        let expected = BinaryOp {
+            left: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+            op: "=".to_string(),
+            right: Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+                op: "=".to_string(),
+                right: Box::new(Identifier {
+                    name: "c".to_string(),
+                }),
+            }),
+        };
+
+        assert_eq!(
+            expected,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryOp>()
+                .unwrap()
+        );
+    }
 }

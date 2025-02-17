@@ -89,6 +89,8 @@ pub fn tokenize(source_code: &str, file_name: &str) -> Vec<Token> {
                 let text = identifier.as_str();
                 let token_type = if text == "true" || text == "false" {
                     TokenType::Boolean
+                } else if text == "and" || text == "or" {
+                    TokenType::Operator
                 } else {
                     TokenType::Identifier
                 };

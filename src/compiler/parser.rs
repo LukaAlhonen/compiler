@@ -1,5 +1,3 @@
-use std::string::ParseError;
-
 use super::ast::*;
 use super::tokenizer::{Location, Token, TokenType};
 use anyhow::{anyhow, Error, Result};
@@ -20,6 +18,16 @@ pub enum ParserError {
     InvalidInteger(String),
     InvalidBoolean(String),
 }
+
+const PRECEDENCE_LEVELS: &[&[&str]] = &[
+    &["="],
+    &["or"],
+    &["and"],
+    &["==", "!="],
+    &["<", "<=", ">", ">="],
+    &["+", "-"],
+    &["*", "/", "&"],
+];
 
 impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -50,9 +58,6 @@ pub struct Parser {
 
 // Implemented Parser as struct for easier tracking of pos and tokens
 // TODO:
-// Support for all operators
-// If and while statements
-// Function calls
 // Blocks
 // variable declaration
 impl Parser {
@@ -259,17 +264,24 @@ impl Parser {
         }
     }
 
-    // get expression in for of Expression * Expression or Expression / Expression
-    // left assiciative
-    fn parse_term(&mut self) -> Result<Box<dyn Expression>, Error> {
-        let mut left = self.parse_factor()?;
+    fn parse_binary_op(&mut self, precedence_level: usize) -> Result<Box<dyn Expression>, Error> {
+        if precedence_level >= PRECEDENCE_LEVELS.len() {
+            return self.parse_factor();
+        }
 
-        while ["*".to_string(), "/".to_string()].contains(&self.peek().text) {
-            let op = self
-                .consume_expect(Expected::Multiple(vec!["*".to_string(), "/".to_string()]))?
-                .text;
-            let right = self.parse_factor()?;
-            left = Box::new(BinaryOp { left, op, right });
+        println!("{:?}", PRECEDENCE_LEVELS[precedence_level]);
+
+        let mut left = self.parse_binary_op(precedence_level + 1)?;
+
+        while PRECEDENCE_LEVELS[precedence_level].contains(&self.peek().text.as_str()) {
+            let op = self.consume()?.text;
+            if op == "=".to_string() {
+                let right = self.parse_binary_op(precedence_level)?;
+                left = Box::new(BinaryOp { left, op, right });
+            } else {
+                let right = self.parse_binary_op(precedence_level + 1)?;
+                left = Box::new(BinaryOp { left, op, right });
+            }
         }
 
         Ok(left)
@@ -278,17 +290,7 @@ impl Parser {
     // get expression in for of Expression + Expression or Expression - Expression
     // left assiciative
     fn parse_expression(&mut self) -> Result<Box<dyn Expression>, Error> {
-        let mut left = self.parse_term()?;
-
-        while ["+".to_string(), "-".to_string()].contains(&self.peek().text) {
-            let op = self
-                .consume_expect(Expected::Multiple(vec!["+".to_string(), "-".to_string()]))?
-                .text;
-            let right = self.parse_term()?;
-            left = Box::new(BinaryOp { left, op, right });
-        }
-
-        Ok(left)
+        self.parse_binary_op(0)
     }
 
     pub fn parse(&mut self) -> Result<Box<dyn Expression>, Error> {
@@ -405,27 +407,6 @@ mod test {
             },
             p.parse_identifier().unwrap()
         );
-    }
-
-    #[test]
-    fn test_parse_term() {
-        let tokens = tokenize("2 * 3", "file.txt");
-        let mut p = Parser::new(tokens);
-
-        let bin_op = BinaryOp {
-            left: Box::new(Literal { value: 2.into() }),
-            op: "*".to_string(),
-            right: Box::new(Literal { value: 3.into() }),
-        };
-
-        assert_eq!(
-            bin_op,
-            *p.parse_term()
-                .unwrap()
-                .as_any()
-                .downcast_ref::<BinaryOp>()
-                .unwrap()
-        )
     }
 
     #[test]
