@@ -13,12 +13,18 @@ mod test {
 
         let bin_op = BinaryOp {
             left: Box::new(BinaryOp {
-                left: Box::new(Literal { value: 2.into() }),
+                left: Box::new(Literal {
+                    value: Some(2.into()),
+                }),
                 op: "+".to_string(),
-                right: Box::new(Literal { value: 1.into() }),
+                right: Box::new(Literal {
+                    value: Some(1.into()),
+                }),
             }),
             op: "-".to_string(),
-            right: Box::new(Literal { value: 3.into() }),
+            right: Box::new(Literal {
+                value: Some(3.into()),
+            }),
         };
 
         assert_eq!(
@@ -37,12 +43,18 @@ mod test {
         let mut p: Parser = Parser::new(tokens);
 
         let expected = BinaryOp {
-            left: Box::new(Literal { value: 2.into() }),
+            left: Box::new(Literal {
+                value: Some(2.into()),
+            }),
             op: "+".to_string(),
             right: Box::new(BinaryOp {
-                left: Box::new(Literal { value: 4.into() }),
+                left: Box::new(Literal {
+                    value: Some(4.into()),
+                }),
                 op: "*".to_string(),
-                right: Box::new(Literal { value: 3.into() }),
+                right: Box::new(Literal {
+                    value: Some(3.into()),
+                }),
             }),
         };
 
@@ -151,12 +163,20 @@ mod test {
         let mut p = Parser::new(tokens);
 
         let expected = BinaryOp {
-            left: Box::new(Literal { value: 1.into() }),
+            left: Box::new(Literal {
+                value: Some(1.into()),
+            }),
             op: "+".to_string(),
             right: Box::new(If {
-                cond: Box::new(Literal { value: true.into() }),
-                then: Box::new(Literal { value: 2.into() }),
-                if_else: Some(Box::new(Literal { value: 3.into() })),
+                cond: Box::new(Literal {
+                    value: Some(true.into()),
+                }),
+                then: Box::new(Literal {
+                    value: Some(2.into()),
+                }),
+                if_else: Some(Box::new(Literal {
+                    value: Some(3.into()),
+                })),
             }),
         };
         let parsed = p.parse().unwrap();
@@ -219,9 +239,15 @@ mod test {
                 name: "a".to_string(),
             },
             args: vec![
-                Box::new(Literal { value: 1.into() }),
-                Box::new(Literal { value: 2.into() }),
-                Box::new(Literal { value: 3.into() }),
+                Box::new(Literal {
+                    value: Some(1.into()),
+                }),
+                Box::new(Literal {
+                    value: Some(2.into()),
+                }),
+                Box::new(Literal {
+                    value: Some(3.into()),
+                }),
             ],
         };
         assert_eq!(
@@ -282,14 +308,24 @@ mod test {
             },
             args: vec![
                 Box::new(BinaryOp {
-                    left: Box::new(Literal { value: 1.into() }),
+                    left: Box::new(Literal {
+                        value: Some(1.into()),
+                    }),
                     op: "+".to_string(),
-                    right: Box::new(Literal { value: 2.into() }),
+                    right: Box::new(Literal {
+                        value: Some(2.into()),
+                    }),
                 }),
                 Box::new(If {
-                    cond: Box::new(Literal { value: true.into() }),
-                    then: Box::new(Literal { value: 3.into() }),
-                    if_else: Some(Box::new(Literal { value: 1.into() })),
+                    cond: Box::new(Literal {
+                        value: Some(true.into()),
+                    }),
+                    then: Box::new(Literal {
+                        value: Some(3.into()),
+                    }),
+                    if_else: Some(Box::new(Literal {
+                        value: Some(1.into()),
+                    })),
                 }),
             ],
         };
@@ -310,10 +346,12 @@ mod test {
         let mut p: Parser = Parser::new(tokens);
 
         let expected = BinaryOp {
-            left: Box::new(Literal { value: true.into() }),
+            left: Box::new(Literal {
+                value: Some(true.into()),
+            }),
             op: "or".to_string(),
             right: Box::new(Literal {
-                value: false.into(),
+                value: Some(false.into()),
             }),
         };
 
@@ -344,9 +382,13 @@ mod test {
                     }),
                     op: "==".to_string(),
                     right: Box::new(BinaryOp {
-                        left: Box::new(Literal { value: 2.into() }),
+                        left: Box::new(Literal {
+                            value: Some(2.into()),
+                        }),
                         op: "+".to_string(),
-                        right: Box::new(Literal { value: 2.into() }),
+                        right: Box::new(Literal {
+                            value: Some(2.into()),
+                        }),
                     }),
                 }),
                 op: "or".to_string(),
@@ -354,9 +396,13 @@ mod test {
                     left: Box::new(Identifier { name: "b".into() }),
                     op: "==".into(),
                     right: Box::new(BinaryOp {
-                        left: Box::new(Literal { value: 2.into() }),
+                        left: Box::new(Literal {
+                            value: Some(2.into()),
+                        }),
                         op: "+".to_string(),
-                        right: Box::new(Literal { value: 2.into() }),
+                        right: Box::new(Literal {
+                            value: Some(2.into()),
+                        }),
                     }),
                 }),
             }),
@@ -365,14 +411,18 @@ mod test {
                     name: "a".to_string(),
                 }),
                 op: "+".to_string(),
-                right: Box::new(Literal { value: 2.into() }),
+                right: Box::new(Literal {
+                    value: Some(2.into()),
+                }),
             }),
             if_else: Some(Box::new(BinaryOp {
                 left: Box::new(Identifier {
                     name: "b".to_string(),
                 }),
                 op: "+".to_string(),
-                right: Box::new(Literal { value: 2.into() }),
+                right: Box::new(Literal {
+                    value: Some(2.into()),
+                }),
             })),
         };
 
@@ -392,12 +442,18 @@ mod test {
             }),
             op: "=".to_string(),
             right: Box::new(BinaryOp {
-                left: Box::new(Literal { value: 2.into() }),
+                left: Box::new(Literal {
+                    value: Some(2.into()),
+                }),
                 op: "+".to_string(),
                 right: Box::new(BinaryOp {
-                    left: Box::new(Literal { value: 3.into() }),
+                    left: Box::new(Literal {
+                        value: Some(3.into()),
+                    }),
                     op: "*".to_string(),
-                    right: Box::new(Literal { value: 4.into() }),
+                    right: Box::new(Literal {
+                        value: Some(4.into()),
+                    }),
                 }),
             }),
         };
@@ -438,6 +494,64 @@ mod test {
                 .unwrap()
                 .as_any()
                 .downcast_ref::<BinaryOp>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_block() {
+        let tokens1 = tokenize("{a + b; a}", "file.txt");
+        let tokens2 = tokenize("{a + b; a;}", "file.txt");
+        let mut p1 = Parser::new(tokens1);
+        let mut p2 = Parser::new(tokens2);
+
+        let expected1 = Block {
+            statements: vec![Box::new(BinaryOp {
+                left: Box::new(Identifier {
+                    name: "a".to_string(),
+                }),
+                op: "+".to_string(),
+                right: Box::new(Identifier {
+                    name: "b".to_string(),
+                }),
+            })],
+            result: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+        };
+        let expected2 = Block {
+            statements: vec![
+                Box::new(BinaryOp {
+                    left: Box::new(Identifier {
+                        name: "a".to_string(),
+                    }),
+                    op: "+".to_string(),
+                    right: Box::new(Identifier {
+                        name: "b".to_string(),
+                    }),
+                }),
+                Box::new(Identifier {
+                    name: "a".to_string(),
+                }),
+            ],
+            result: Box::new(Literal { value: None }),
+        };
+
+        assert_eq!(
+            expected1,
+            *p1.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Block>()
+                .unwrap()
+        );
+
+        assert_eq!(
+            expected2,
+            *p2.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Block>()
                 .unwrap()
         );
     }

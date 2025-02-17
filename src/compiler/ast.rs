@@ -20,7 +20,7 @@ pub enum LiteralValue {
 
 #[derive(Debug, PartialEq)]
 pub struct Literal {
-    pub value: LiteralValue,
+    pub value: Option<LiteralValue>,
 }
 
 impl From<i32> for LiteralValue {
@@ -41,7 +41,7 @@ where
 {
     fn from(value: T) -> Self {
         Literal {
-            value: value.into(),
+            value: Some(value.into()),
         }
     }
 }
@@ -171,6 +171,38 @@ impl Expression for FunctionCall {
             .downcast_ref::<FunctionCall>()
             .map_or(false, |other| {
                 self.name == other.name && self.args == other.args
+            })
+    }
+}
+
+#[derive(Debug)]
+pub struct Block {
+    pub statements: Vec<Box<dyn Expression>>,
+    pub result: Box<dyn Expression>,
+}
+
+impl Expression for Block {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq_expr(&self, other: &dyn Expression) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Block>()
+            .map_or(false, |other| {
+                self.statements == other.statements && self.result.eq_expr(&*other.result)
+            })
+    }
+}
+
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Block>()
+            .map_or(false, |other| {
+                self.statements == other.statements && self.result.eq_expr(&*other.result)
             })
     }
 }

@@ -137,7 +137,7 @@ impl Parser {
                     .parse::<i32>()
                     .map_err(|_| anyhow!(ParserError::InvalidInteger(token.text)))?;
                 Ok(Literal {
-                    value: int_val.into(),
+                    value: Some(int_val.into()),
                 })
             }
             _ => Err(anyhow!(ParserError::UnexpectedToken {
@@ -159,7 +159,7 @@ impl Parser {
                     .parse::<bool>()
                     .map_err(|_| anyhow!(ParserError::InvalidBoolean(token.text)))?;
                 Ok(Literal {
-                    value: bool_val.into(),
+                    value: Some(bool_val.into()),
                 })
             }
             _ => Err(anyhow!(ParserError::UnexpectedToken {
@@ -225,6 +225,29 @@ impl Parser {
         }))
     }
 
+    fn parse_block(&mut self) -> Result<Box<dyn Expression>, Error> {
+        self.consume_expect(Expected::Single("{".to_string()))?;
+        let mut statements: Vec<Box<dyn Expression>> = vec![];
+        while self.peek().text != "}".to_string() {
+            let expr = self.parse_expression()?;
+            if self.peek().text == ";".to_string() {
+                self.consume_expect(Expected::Single(";".to_string()))?;
+                statements.push(expr);
+            } else {
+                self.consume_expect(Expected::Single("}".to_string()))?;
+                return Ok(Box::new(Block {
+                    statements,
+                    result: expr,
+                }));
+            }
+        }
+        self.consume_expect(Expected::Single("}".to_string()))?;
+        Ok(Box::new(Block {
+            statements,
+            result: Box::new(Literal { value: None }),
+        }))
+    }
+
     // Get expression inside paranthesis, expects epxression to be wrapped in ()
     fn parse_parenthesized(&mut self) -> Result<Box<dyn Expression>, Error> {
         self.consume_expect(Expected::Single("(".to_string()))?;
@@ -242,6 +265,8 @@ impl Parser {
             Ok(self.parse_parenthesized()?)
         } else if token.text == "if" {
             Ok(self.parse_if()?)
+        } else if token.text == "{" {
+            Ok(self.parse_block()?)
         } else {
             match token.token_type {
                 TokenType::Integer => Ok(Box::new(self.parse_int_literal()?)),
@@ -268,8 +293,6 @@ impl Parser {
         if precedence_level >= PRECEDENCE_LEVELS.len() {
             return self.parse_factor();
         }
-
-        println!("{:?}", PRECEDENCE_LEVELS[precedence_level]);
 
         let mut left = self.parse_binary_op(precedence_level + 1)?;
 
@@ -298,6 +321,7 @@ impl Parser {
 
         // Make sure the whole input has been parsed, if it has then peek() will return End token
         // If not, return error
+        println!("{}, {}", self.pos, self.tokens.len());
         let token: Token = self.peek();
         if token.token_type != TokenType::End {
             return Err(anyhow!(ParserError::UnexpectedToken {
@@ -391,7 +415,7 @@ mod test {
         let mut p = Parser::new(tokens);
         assert_eq!(
             Literal {
-                value: LiteralValue::Int(2)
+                value: Some(2.into())
             },
             p.parse_int_literal().unwrap()
         );
@@ -415,12 +439,18 @@ mod test {
         let mut p = Parser::new(tokens);
 
         let bin_op = BinaryOp {
-            left: Box::new(Literal { value: 2.into() }),
+            left: Box::new(Literal {
+                value: Some(2.into()),
+            }),
             op: "+".to_string(),
             right: Box::new(BinaryOp {
-                left: Box::new(Literal { value: 3.into() }),
+                left: Box::new(Literal {
+                    value: Some(3.into()),
+                }),
                 op: "*".to_string(),
-                right: Box::new(Literal { value: 4.into() }),
+                right: Box::new(Literal {
+                    value: Some(4.into()),
+                }),
             }),
         };
 
@@ -440,5 +470,32 @@ mod test {
         let tokens = tokenize("2 (3 * 4", "file.txt");
         let mut p = Parser::new(tokens);
         p.parse_parenthesized().unwrap();
+    }
+
+    #[test]
+    fn test_semicolon() {
+        let tokens = tokenize("a + b;", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        let expected = BinaryOp {
+            left: Box::new(Identifier {
+                name: "a".to_string(),
+            }),
+            op: "+".to_string(),
+            right: Box::new(Identifier {
+                name: "b".to_string(),
+            }),
+        };
+
+        assert_eq!(
+            expected,
+            *p.parse_expression()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryOp>()
+                .unwrap()
+        );
+
+        assert_eq!(p.peek().text, ";".to_string());
     }
 }
