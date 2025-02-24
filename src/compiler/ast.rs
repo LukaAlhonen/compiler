@@ -178,7 +178,6 @@ impl Expression for FunctionCall {
 #[derive(Debug)]
 pub struct Block {
     pub statements: Vec<Box<dyn Expression>>,
-    pub result: Box<dyn Expression>,
 }
 
 impl Expression for Block {
@@ -190,9 +189,7 @@ impl Expression for Block {
         other
             .as_any()
             .downcast_ref::<Block>()
-            .map_or(false, |other| {
-                self.statements == other.statements && self.result.eq_expr(&*other.result)
-            })
+            .map_or(false, |other| self.statements == other.statements)
     }
 }
 
@@ -201,8 +198,70 @@ impl PartialEq for Block {
         other
             .as_any()
             .downcast_ref::<Block>()
+            .map_or(false, |other| self.statements == other.statements)
+    }
+}
+
+#[derive(Debug)]
+pub struct VarDeclaration {
+    pub var: Identifier,
+    pub initializer: Box<dyn Expression>,
+}
+
+impl Expression for VarDeclaration {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq_expr(&self, other: &dyn Expression) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<VarDeclaration>()
             .map_or(false, |other| {
-                self.statements == other.statements && self.result.eq_expr(&*other.result)
+                self.var.eq_expr(&other.var) && self.initializer.eq_expr(&*other.initializer)
+            })
+    }
+}
+
+impl PartialEq for VarDeclaration {
+    fn eq(&self, other: &Self) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<VarDeclaration>()
+            .map_or(false, |other| {
+                self.var.eq_expr(&other.var) && self.initializer.eq_expr(&*other.initializer)
+            })
+    }
+}
+
+#[derive(Debug)]
+pub struct While {
+    pub cond: Box<dyn Expression>,
+    pub body: Box<dyn Expression>,
+}
+
+impl Expression for While {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq_expr(&self, other: &dyn Expression) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<While>()
+            .map_or(false, |other| {
+                self.cond.eq_expr(&*other.cond) && self.body.eq_expr(&*other.body)
+            })
+    }
+}
+
+impl PartialEq for While {
+    fn eq(&self, other: &Self) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<While>()
+            .map_or(false, |other| {
+                self.cond.eq_expr(&*other.cond) && self.body.eq_expr(&*other.body)
             })
     }
 }
