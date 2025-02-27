@@ -4,8 +4,6 @@ use compiler::compiler::tokenizer::*;
 
 #[cfg(test)]
 mod test {
-    use std::f32::consts::LN_2;
-
     use super::*;
 
     #[test]
