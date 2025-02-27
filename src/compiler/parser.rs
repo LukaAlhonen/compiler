@@ -57,9 +57,6 @@ pub struct Parser {
 }
 
 // Implemented Parser as struct for easier tracking of pos and tokens
-// TODO:
-// Blocks
-// variable declaration
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
@@ -136,9 +133,7 @@ impl Parser {
                     .text
                     .parse::<i32>()
                     .map_err(|_| anyhow!(ParserError::InvalidInteger(token.text)))?;
-                Ok(Literal {
-                    value: Some(int_val.into()),
-                })
+                Ok(Literal::new(int_val, token.loc))
             }
             _ => Err(anyhow!(ParserError::UnexpectedToken {
                 location: token.loc,
@@ -158,9 +153,7 @@ impl Parser {
                     .text
                     .parse::<bool>()
                     .map_err(|_| anyhow!(ParserError::InvalidBoolean(token.text)))?;
-                Ok(Literal {
-                    value: Some(bool_val.into()),
-                })
+                Ok(Literal::new(bool_val, token.loc))
             }
             _ => Err(anyhow!(ParserError::UnexpectedToken {
                 location: token.loc,
@@ -177,9 +170,7 @@ impl Parser {
         match token.token_type {
             TokenType::Identifier => {
                 let identifier = self.consume()?;
-                Ok(Identifier {
-                    name: identifier.text,
-                })
+                Ok(Identifier::new(identifier.text, token.loc))
             }
             _ => Err(anyhow!(ParserError::UnexpectedToken {
                 location: token.loc,
@@ -193,50 +184,50 @@ impl Parser {
         self.consume_expect(Expected::Single("(".to_string()))?;
         let mut args = vec![];
         while self.peek().text != ")".to_string() {
-            args.push(self.parse_binary_op(0)?);
+            args.push(self.parse_binary_op()?);
             if self.peek().text != ")".to_string() {
                 self.consume_expect(Expected::Single(",".to_string()))?;
             }
         }
         self.consume_expect(Expected::Single(")".to_string()))?;
-        Ok(FunctionCall { name, args })
+        // Ok(FunctionCall { name, args })
+        Ok(FunctionCall::new(name, args))
     }
 
     // Parser if statemetn and returns If
     fn parse_if(&mut self) -> Result<If, Error> {
+        let loc = self.peek().loc;
         // Get rid of "if" token, return error if for some reason it has disappeared 😱
         self.consume_expect(Expected::Single("if".to_string()))?;
 
         // Parse expression that should produce boolean value
-        let cond = self.parse_binary_op(0)?;
+        let cond = self.parse_binary_op()?;
+
         // Get rid of "then" token
         self.consume_expect(Expected::Single("then".to_string()))?;
         //
-        let then = self.parse_binary_op(0)?;
+        let then = self.parse_binary_op()?;
         let if_else = if self.peek().text == "else".to_string() {
             self.consume_expect(Expected::Single("else".to_string()))?;
-            Some(self.parse_binary_op(0)?)
+            Some(self.parse_binary_op()?)
         } else {
             None
         };
-        Ok(If {
-            cond,
-            then,
-            if_else,
-        })
+        Ok(If::new(cond, then, if_else, loc))
     }
 
     fn parse_while(&mut self) -> Result<While, Error> {
+        let loc = self.peek().loc;
         self.consume_expect(Expected::Single("while".to_string()))?;
 
         // Get while condition
-        let cond = self.parse_binary_op(0)?;
+        let cond = self.parse_binary_op()?;
 
         // Get while body
         self.consume_expect(Expected::Single("do".to_string()))?;
-        let body = self.parse_binary_op(0)?;
+        let body = self.parse_binary_op()?;
 
-        Ok(While { cond, body })
+        Ok(While::new(cond, body, loc))
     }
 
     fn parse_var_declaration(&mut self) -> Result<VarDeclaration, Error> {
@@ -249,15 +240,16 @@ impl Parser {
                 found: token.token_type.to_string()
             }));
         } else {
-            let var = Identifier { name: token.text };
+            let var = Identifier::new(token.text, token.loc);
             self.consume_expect(Expected::Single("=".to_string()))?;
-            let initializer = self.parse_binary_op(0)?;
+            let initializer = self.parse_binary_op()?;
 
-            Ok(VarDeclaration { var, initializer })
+            Ok(VarDeclaration::new(var, initializer))
         }
     }
 
     fn parse_block(&mut self) -> Result<Box<dyn Expression>, Error> {
+        let start_loc = self.peek().loc;
         self.consume_expect(Expected::Single("{".to_string()))?;
         let mut statements: Vec<Box<dyn Expression>> = vec![];
         while self.peek().text != "}".to_string() {
@@ -270,36 +262,11 @@ impl Parser {
             } else if next_token.token_type == TokenType::Punctuation && next_token.text == "}" {
                 self.consume()?;
                 statements.push(expression);
-                return Ok(Box::new(Block { statements }));
-            } else if let Some(_) = expression.as_any().downcast_ref::<Block>() {
+                return Ok(Box::new(Block::new(statements, start_loc)));
+            } else if expression.is_block() {
                 statements.push(expression);
-            } else if let Some(if_statement) = expression.as_any().downcast_ref::<If>() {
-                if let Some(if_else) = &if_statement.if_else {
-                    if if_else.as_any().downcast_ref::<Block>().is_some() {
-                        statements.push(expression);
-                    } else {
-                        return Err(anyhow!(ParserError::UnexpectedToken {
-                            location: next_token.loc,
-                            expected: "}".to_string(),
-                            found: next_token.text,
-                        }));
-                    }
-                } else {
-                    if let Some(_) = &if_statement.then.as_any().downcast_ref::<Block>() {
-                        statements.push(expression);
-                    } else {
-                        return Err(anyhow!(ParserError::UnexpectedToken {
-                            location: next_token.loc,
-                            expected: "}".to_string(),
-                            found: next_token.text
-                        }));
-                    }
-                }
-            } else if let Some(while_statement) = expression.as_any().downcast_ref::<While>() {
-                if let Some(_) = while_statement.body.as_any().downcast_ref::<Block>() {
-                    statements.push(expression);
-                }
             } else {
+                dbg!(expression);
                 return Err(anyhow!(ParserError::UnexpectedToken {
                     location: next_token.loc,
                     expected: "}".to_string(),
@@ -307,16 +274,17 @@ impl Parser {
                 }));
             }
         }
+        let end_loc = self.peek().loc;
         self.consume_expect(Expected::Single("}".to_string()))?;
-        statements.push(Box::new(Literal { value: None }));
-        Ok(Box::new(Block { statements }))
+        statements.push(Box::new(Literal::none(end_loc)));
+        Ok(Box::new(Block::new(statements, start_loc)))
     }
 
     // Get expression inside paranthesis, expects epxression to be wrapped in ()
     fn parse_parenthesized(&mut self) -> Result<Box<dyn Expression>, Error> {
         self.consume_expect(Expected::Single("(".to_string()))?;
 
-        let expr = self.parse_binary_op(0)?;
+        let expr = self.parse_binary_op()?;
         self.consume_expect(Expected::Single(")".to_string()))?;
         Ok(expr)
     }
@@ -324,8 +292,12 @@ impl Parser {
     // Get int literal, identifier or epxression in parenthises at current pos
     fn parse_factor(&mut self) -> Result<Box<dyn Expression>, Error> {
         let token: Token = self.peek();
-
-        if token.text == "(" {
+        if token.text == "var" {
+            Err(anyhow!(
+                "{}: \"var\" is only allowed directly inside blocks and in top-level expressions",
+                token.loc.to_string()
+            ))
+        } else if token.text == "(" {
             Ok(self.parse_parenthesized()?)
         } else if token.text == "if" {
             Ok(Box::new(self.parse_if()?))
@@ -355,39 +327,78 @@ impl Parser {
         }
     }
 
-    fn parse_binary_op(&mut self, precedence_level: usize) -> Result<Box<dyn Expression>, Error> {
-        let token = self.peek();
+    fn parse_binary_op(&mut self) -> Result<Box<dyn Expression>, Error> {
+        let mut expressions = vec![self.parse_factor()?];
+        let mut operators: Vec<String> = vec![];
 
-        // Do not allow var declaraiton inside bin op
-        if token.text == "var" {
-            return Err(anyhow!(
-                "{}: var is only allowed directly inside blocks and in top-level expressions",
-                token.loc.to_string()
-            ));
-        }
+        while let Some(op) = self.peek_op() {
+            let curr_precedence = self.get_op_precedence(&op);
 
-        if precedence_level >= PRECEDENCE_LEVELS.len() {
-            return self.parse_factor();
-        }
+            self.consume()?;
 
-        let mut left = self.parse_binary_op(precedence_level + 1)?;
+            let right = self.parse_factor()?;
 
-        while PRECEDENCE_LEVELS[precedence_level].contains(&self.peek().text.as_str()) {
-            let op = self.consume()?.text;
-            if op == "=" {
-                let right = self.parse_binary_op(precedence_level)?;
-                left = Box::new(BinaryOp { left, op, right });
-            } else {
-                let right = self.parse_binary_op(precedence_level + 1)?;
-                left = Box::new(BinaryOp { left, op, right });
+            while !operators.is_empty() {
+                let prev_precedence = self.get_op_precedence(&operators[operators.len() - 1]);
+
+                // Left associativity for all operators except "="
+                if curr_precedence < prev_precedence
+                    || (curr_precedence == prev_precedence && op != "=")
+                {
+                    // Get right and left expressions from stack + operator from stack
+                    // If missing, turn option into error result and pass it along to caller
+                    let right = expressions
+                        .pop()
+                        .ok_or_else(|| anyhow!("Missing right expression of bin op"))?;
+                    let left = expressions
+                        .pop()
+                        .ok_or_else(|| anyhow!("Missing left expression of bin op"))?;
+                    let op = operators
+                        .pop()
+                        .ok_or_else(|| anyhow!("Missing operator of bin op"))?;
+
+                    expressions.push(Box::new(BinaryOp::new(left, op, right)));
+                } else {
+                    break;
+                }
             }
+
+            operators.push(op);
+            expressions.push(right);
         }
 
-        Ok(left)
+        while let Some(op) = operators.pop() {
+            let right = expressions
+                .pop()
+                .ok_or_else(|| anyhow!("Missing right expression of bin op"))?;
+            let left = expressions
+                .pop()
+                .ok_or_else(|| anyhow!("Missing left expression of bin op"))?;
+            expressions.push(Box::new(BinaryOp::new(left, op, right)));
+        }
+
+        expressions
+            .pop()
+            .ok_or_else(|| anyhow!("Missing expression"))
     }
 
-    // get expression in for of Expression + Expression or Expression - Expression
-    // left assiciative
+    fn peek_op(&mut self) -> Option<String> {
+        let token = self.peek();
+        match token.token_type {
+            TokenType::Operator => Some(token.text),
+            _ => None,
+        }
+    }
+
+    fn get_op_precedence(&self, op: &str) -> usize {
+        for (precedence_level, ops) in PRECEDENCE_LEVELS.iter().enumerate() {
+            if ops.contains(&op) {
+                return precedence_level;
+            }
+        }
+        PRECEDENCE_LEVELS.len()
+    }
+
     fn parse_expression(&mut self) -> Result<Box<dyn Expression>, Error> {
         let token = self.peek().text;
         if token == "var" {
@@ -399,7 +410,7 @@ impl Parser {
         } else if token == "{" {
             Ok(self.parse_block()?)
         } else {
-            self.parse_binary_op(0)
+            self.parse_binary_op()
         }
     }
 
@@ -501,7 +512,8 @@ mod test {
         let mut p = Parser::new(tokens);
         assert_eq!(
             Literal {
-                value: Some(2.into())
+                value: Some(2.into()),
+                loc: Location::special()
             },
             p.parse_int_literal().unwrap()
         );
@@ -513,7 +525,8 @@ mod test {
         let mut p = Parser::new(tokens);
         assert_eq!(
             Identifier {
-                name: "a".to_string()
+                name: "a".to_string(),
+                loc: Location::special()
             },
             p.parse_identifier().unwrap()
         );
@@ -527,17 +540,22 @@ mod test {
         let bin_op = BinaryOp {
             left: Box::new(Literal {
                 value: Some(2.into()),
+                loc: Location::special(),
             }),
             op: "+".to_string(),
             right: Box::new(BinaryOp {
                 left: Box::new(Literal {
                     value: Some(3.into()),
+                    loc: Location::special(),
                 }),
                 op: "*".to_string(),
                 right: Box::new(Literal {
                     value: Some(4.into()),
+                    loc: Location::special(),
                 }),
+                loc: Location::special(),
             }),
+            loc: Location::special(),
         };
 
         assert_eq!(
@@ -566,11 +584,14 @@ mod test {
         let expected = BinaryOp {
             left: Box::new(Identifier {
                 name: "a".to_string(),
+                loc: Location::special(),
             }),
             op: "+".to_string(),
             right: Box::new(Identifier {
                 name: "b".to_string(),
+                loc: Location::special(),
             }),
+            loc: Location::special(),
         };
 
         assert_eq!(

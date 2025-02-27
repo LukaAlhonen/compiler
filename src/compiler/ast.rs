@@ -1,9 +1,12 @@
+use super::tokenizer::Location;
 use std::any::Any;
 use std::fmt::Debug;
 
 pub trait Expression: Debug {
     fn as_any(&self) -> &dyn Any;
     fn eq_expr(&self, other: &dyn Expression) -> bool;
+    fn is_block(&self) -> bool; // Kind of weird hack but allows for easy checking if expression ends in "}"
+    fn get_loc(&self) -> &Location;
 }
 
 impl PartialEq for Box<dyn Expression> {
@@ -21,6 +24,7 @@ pub enum LiteralValue {
 #[derive(Debug, PartialEq)]
 pub struct Literal {
     pub value: Option<LiteralValue>,
+    pub loc: Location,
 }
 
 impl From<i32> for LiteralValue {
@@ -35,14 +39,19 @@ impl From<bool> for LiteralValue {
     }
 }
 
-impl<T> From<T> for Literal
-where
-    T: Into<LiteralValue>,
-{
-    fn from(value: T) -> Self {
+impl Literal {
+    pub fn new<T>(value: T, loc: Location) -> Self
+    where
+        T: Into<LiteralValue>,
+    {
         Literal {
             value: Some(value.into()),
+            loc,
         }
+    }
+
+    pub fn none(loc: Location) -> Self {
+        Literal { value: None, loc }
     }
 }
 
@@ -57,11 +66,29 @@ impl Expression for Literal {
             .downcast_ref::<Literal>()
             .map_or(false, |other| self.value == other.value)
     }
+
+    fn is_block(&self) -> bool {
+        false
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Identifier {
     pub name: String,
+    pub loc: Location,
+}
+
+impl Identifier {
+    pub fn new<S: Into<String>>(name: S, loc: Location) -> Self {
+        Identifier {
+            name: name.into(),
+            loc,
+        }
+    }
 }
 
 impl Expression for Identifier {
@@ -75,6 +102,14 @@ impl Expression for Identifier {
             .downcast_ref::<Identifier>()
             .map_or(false, |other| self.name == other.name)
     }
+
+    fn is_block(&self) -> bool {
+        false
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
+    }
 }
 
 #[derive(Debug)]
@@ -82,6 +117,22 @@ pub struct BinaryOp {
     pub left: Box<dyn Expression>,
     pub op: String,
     pub right: Box<dyn Expression>,
+    pub loc: Location,
+}
+
+impl BinaryOp {
+    pub fn new<S: Into<String>>(
+        left: Box<dyn Expression>,
+        op: S,
+        right: Box<dyn Expression>,
+    ) -> Self {
+        BinaryOp {
+            loc: left.get_loc().clone(),
+            left,
+            op: op.into(),
+            right,
+        }
+    }
 }
 
 impl Expression for BinaryOp {
@@ -99,6 +150,14 @@ impl Expression for BinaryOp {
                     && self.right.eq_expr(&*other.right)
             })
     }
+
+    fn is_block(&self) -> bool {
+        self.right.is_block()
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
+    }
 }
 
 impl PartialEq for BinaryOp {
@@ -112,6 +171,23 @@ pub struct If {
     pub cond: Box<dyn Expression>,
     pub then: Box<dyn Expression>,
     pub if_else: Option<Box<dyn Expression>>, // TODO: Find better name
+    pub loc: Location,
+}
+
+impl If {
+    pub fn new(
+        cond: Box<dyn Expression>,
+        then: Box<dyn Expression>,
+        if_else: Option<Box<dyn Expression>>,
+        loc: Location,
+    ) -> Self {
+        If {
+            cond,
+            then,
+            if_else,
+            loc,
+        }
+    }
 }
 
 impl Expression for If {
@@ -134,6 +210,18 @@ impl Expression for If {
                 });
             cond_eq && then_eq && if_else_eq
         })
+    }
+
+    fn is_block(&self) -> bool {
+        if let Some(if_else) = &self.if_else {
+            if_else.is_block()
+        } else {
+            self.then.is_block()
+        }
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
     }
 }
 
@@ -158,6 +246,17 @@ impl PartialEq for If {
 pub struct FunctionCall {
     pub name: Identifier,
     pub args: Vec<Box<dyn Expression>>,
+    pub loc: Location,
+}
+
+impl FunctionCall {
+    pub fn new(name: Identifier, args: Vec<Box<dyn Expression>>) -> Self {
+        FunctionCall {
+            loc: name.get_loc().clone(),
+            name,
+            args,
+        }
+    }
 }
 
 impl Expression for FunctionCall {
@@ -173,11 +272,26 @@ impl Expression for FunctionCall {
                 self.name == other.name && self.args == other.args
             })
     }
+
+    fn is_block(&self) -> bool {
+        false
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
+    }
 }
 
 #[derive(Debug)]
 pub struct Block {
     pub statements: Vec<Box<dyn Expression>>,
+    pub loc: Location,
+}
+
+impl Block {
+    pub fn new(statements: Vec<Box<dyn Expression>>, loc: Location) -> Self {
+        Block { statements, loc }
+    }
 }
 
 impl Expression for Block {
@@ -190,6 +304,14 @@ impl Expression for Block {
             .as_any()
             .downcast_ref::<Block>()
             .map_or(false, |other| self.statements == other.statements)
+    }
+
+    fn is_block(&self) -> bool {
+        true
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
     }
 }
 
@@ -206,6 +328,17 @@ impl PartialEq for Block {
 pub struct VarDeclaration {
     pub var: Identifier,
     pub initializer: Box<dyn Expression>,
+    pub loc: Location,
+}
+
+impl VarDeclaration {
+    pub fn new(var: Identifier, initializer: Box<dyn Expression>) -> Self {
+        VarDeclaration {
+            loc: var.get_loc().clone(),
+            var,
+            initializer,
+        }
+    }
 }
 
 impl Expression for VarDeclaration {
@@ -220,6 +353,14 @@ impl Expression for VarDeclaration {
             .map_or(false, |other| {
                 self.var.eq_expr(&other.var) && self.initializer.eq_expr(&*other.initializer)
             })
+    }
+
+    fn is_block(&self) -> bool {
+        self.initializer.is_block()
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
     }
 }
 
@@ -238,6 +379,13 @@ impl PartialEq for VarDeclaration {
 pub struct While {
     pub cond: Box<dyn Expression>,
     pub body: Box<dyn Expression>,
+    pub loc: Location,
+}
+
+impl While {
+    pub fn new(cond: Box<dyn Expression>, body: Box<dyn Expression>, loc: Location) -> Self {
+        While { cond, body, loc }
+    }
 }
 
 impl Expression for While {
@@ -252,6 +400,14 @@ impl Expression for While {
             .map_or(false, |other| {
                 self.cond.eq_expr(&*other.cond) && self.body.eq_expr(&*other.body)
             })
+    }
+
+    fn is_block(&self) -> bool {
+        self.body.is_block()
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
     }
 }
 

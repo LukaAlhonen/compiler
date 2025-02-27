@@ -4,6 +4,8 @@ use compiler::compiler::tokenizer::*;
 
 #[cfg(test)]
 mod test {
+    use std::f32::consts::LN_2;
+
     use super::*;
 
     #[test]
@@ -11,24 +13,18 @@ mod test {
         let tokens = tokenize("2 + 1 - 3", "file.txt");
         let mut p: Parser = Parser::new(tokens);
 
-        let bin_op = BinaryOp {
-            left: Box::new(BinaryOp {
-                left: Box::new(Literal {
-                    value: Some(2.into()),
-                }),
-                op: "+".to_string(),
-                right: Box::new(Literal {
-                    value: Some(1.into()),
-                }),
-            }),
-            op: "-".to_string(),
-            right: Box::new(Literal {
-                value: Some(3.into()),
-            }),
-        };
+        let expected = BinaryOp::new(
+            Box::new(BinaryOp::new(
+                Box::new(Literal::new(2, Location::special())),
+                "+",
+                Box::new(Literal::new(1, Location::special())),
+            )),
+            "-",
+            Box::new(Literal::new(3, Location::special())),
+        );
 
         assert_eq!(
-            bin_op,
+            expected,
             *p.parse()
                 .unwrap()
                 .as_any()
@@ -42,21 +38,15 @@ mod test {
         let tokens = tokenize("2 + 4 * 3", "file.txt");
         let mut p: Parser = Parser::new(tokens);
 
-        let expected = BinaryOp {
-            left: Box::new(Literal {
-                value: Some(2.into()),
-            }),
-            op: "+".to_string(),
-            right: Box::new(BinaryOp {
-                left: Box::new(Literal {
-                    value: Some(4.into()),
-                }),
-                op: "*".to_string(),
-                right: Box::new(Literal {
-                    value: Some(3.into()),
-                }),
-            }),
-        };
+        let expected = BinaryOp::new(
+            Box::new(Literal::new(2, Location::special())),
+            "+",
+            Box::new(BinaryOp::new(
+                Box::new(Literal::new(4, Location::special())),
+                "*",
+                Box::new(Literal::new(3, Location::special())),
+            )),
+        );
 
         assert_eq!(
             expected,
@@ -100,21 +90,18 @@ mod test {
         let tokens = tokenize("if a then b + c", "file.txt");
         let mut p: Parser = Parser::new(tokens);
 
-        let expected = If {
-            cond: Box::new(Identifier {
-                name: "a".to_string(),
-            }),
-            then: Box::new(BinaryOp {
-                left: Box::new(Identifier {
-                    name: "b".to_string(),
-                }),
-                op: "+".to_string(),
-                right: Box::new(Identifier {
-                    name: "c".to_string(),
-                }),
-            }),
-            if_else: None,
-        };
+        let expected = If::new(
+            // cond
+            Box::new(Identifier::new("a", Location::special())),
+            // then
+            Box::new(BinaryOp::new(
+                Box::new(Identifier::new("b", Location::special())), // left
+                "+",                                                 // op
+                Box::new(Identifier::new("c", Location::special())), // right
+            )),
+            None,                // if_else
+            Location::special(), // loc
+        );
 
         assert_eq!(
             expected,
@@ -127,29 +114,23 @@ mod test {
         let tokens = tokenize("if a then b + c else b * c", "file.txt");
         let mut p: Parser = Parser::new(tokens);
 
-        let expected = If {
-            cond: Box::new(Identifier {
-                name: "a".to_string(),
-            }),
-            then: Box::new(BinaryOp {
-                left: Box::new(Identifier {
-                    name: "b".to_string(),
-                }),
-                op: "+".to_string(),
-                right: Box::new(Identifier {
-                    name: "c".to_string(),
-                }),
-            }),
-            if_else: Some(Box::new(BinaryOp {
-                left: Box::new(Identifier {
-                    name: "b".to_string(),
-                }),
-                op: "*".to_string(),
-                right: Box::new(Identifier {
-                    name: "c".to_string(),
-                }),
-            })),
-        };
+        let expected = If::new(
+            // cond
+            Box::new(Identifier::new("a", Location::special())),
+            // then
+            Box::new(BinaryOp::new(
+                Box::new(Identifier::new("b", Location::special())), // left
+                "+",                                                 // op
+                Box::new(Identifier::new("c", Location::special())), // right
+            )),
+            // if_else
+            Some(Box::new(BinaryOp::new(
+                Box::new(Identifier::new("b", Location::special())), // left
+                "*",                                                 // op
+                Box::new(Identifier::new("c", Location::special())), // right
+            ))),
+            Location::special(), // loc
+        );
 
         assert_eq!(
             expected,
@@ -162,23 +143,17 @@ mod test {
         let tokens = tokenize("1 + if true then 2 else 3", "file.txt");
         let mut p = Parser::new(tokens);
 
-        let expected = BinaryOp {
-            left: Box::new(Literal {
-                value: Some(1.into()),
-            }),
-            op: "+".to_string(),
-            right: Box::new(If {
-                cond: Box::new(Literal {
-                    value: Some(true.into()),
-                }),
-                then: Box::new(Literal {
-                    value: Some(2.into()),
-                }),
-                if_else: Some(Box::new(Literal {
-                    value: Some(3.into()),
-                })),
-            }),
-        };
+        let expected = BinaryOp::new(
+            Box::new(Literal::new(1, Location::special())), // left
+            "+",                                            // op
+            // right
+            Box::new(If::new(
+                Box::new(Literal::new(true, Location::special())), // cond
+                Box::new(Literal::new(2, Location::special())),    // then
+                Some(Box::new(Literal::new(3, Location::special()))), // if_else
+                Location::special(),                               // loc
+            )),
+        );
         let parsed = p.parse().unwrap();
 
         assert_eq!(
@@ -201,25 +176,18 @@ mod test {
         let tokens = tokenize("if a then if b then c else d else e", "file.txt");
         let mut p = Parser::new(tokens);
 
-        let expected = If {
-            cond: Box::new(Identifier {
-                name: "a".to_string(),
-            }),
-            then: Box::new(If {
-                cond: Box::new(Identifier {
-                    name: "b".to_string(),
-                }),
-                then: Box::new(Identifier {
-                    name: "c".to_string(),
-                }),
-                if_else: Some(Box::new(Identifier {
-                    name: "d".to_string(),
-                })),
-            }),
-            if_else: Some(Box::new(Identifier {
-                name: "e".to_string(),
-            })),
-        };
+        let expected = If::new(
+            Box::new(Identifier::new("a", Location::special())), // cond
+            // then
+            Box::new(If::new(
+                Box::new(Identifier::new("b", Location::special())), // cond
+                Box::new(Identifier::new("c", Location::special())), // then
+                Some(Box::new(Identifier::new("d", Location::special()))), // if_else
+                Location::special(),
+            )),
+            Some(Box::new(Identifier::new("e", Location::special()))), // if_else
+            Location::special(),                                       // loc
+        );
 
         let parsed = p.parse().unwrap();
 
@@ -234,22 +202,15 @@ mod test {
         let tokens4 = tokenize("d(1 + 2, if true then 3 else 1)", "file.txt");
 
         let mut p = Parser::new(tokens1);
-        let expected1 = FunctionCall {
-            name: Identifier {
-                name: "a".to_string(),
-            },
-            args: vec![
-                Box::new(Literal {
-                    value: Some(1.into()),
-                }),
-                Box::new(Literal {
-                    value: Some(2.into()),
-                }),
-                Box::new(Literal {
-                    value: Some(3.into()),
-                }),
+        let expected1 = FunctionCall::new(
+            Identifier::new("a", Location::special()), // name
+            // args
+            vec![
+                Box::new(Literal::new(1, Location::special())),
+                Box::new(Literal::new(2, Location::special())),
+                Box::new(Literal::new(3, Location::special())),
             ],
-        };
+        );
         assert_eq!(
             expected1,
             *p.parse()
@@ -260,22 +221,15 @@ mod test {
         );
 
         p = Parser::new(tokens2);
-        let expected2 = FunctionCall {
-            name: Identifier {
-                name: "b".to_string(),
-            },
-            args: vec![
-                Box::new(Identifier {
-                    name: "c".to_string(),
-                }),
-                Box::new(Identifier {
-                    name: "d".to_string(),
-                }),
-                Box::new(Identifier {
-                    name: "e".to_string(),
-                }),
+        let expected2 = FunctionCall::new(
+            Identifier::new("b", Location::special()), // name
+            // args
+            vec![
+                Box::new(Identifier::new("c", Location::special())),
+                Box::new(Identifier::new("d", Location::special())),
+                Box::new(Identifier::new("e", Location::special())),
             ],
-        };
+        );
         assert_eq!(
             expected2,
             *p.parse()
@@ -286,12 +240,10 @@ mod test {
         );
 
         p = Parser::new(tokens3);
-        let expected3 = FunctionCall {
-            name: Identifier {
-                name: "c".to_string(),
-            },
-            args: vec![],
-        };
+        let expected3 = FunctionCall::new(
+            Identifier::new("c", Location::special()), // name
+            vec![],                                    // args
+        );
         assert_eq!(
             expected3,
             *p.parse()
@@ -302,33 +254,23 @@ mod test {
         );
 
         p = Parser::new(tokens4);
-        let expected4 = FunctionCall {
-            name: Identifier {
-                name: "d".to_string(),
-            },
-            args: vec![
-                Box::new(BinaryOp {
-                    left: Box::new(Literal {
-                        value: Some(1.into()),
-                    }),
-                    op: "+".to_string(),
-                    right: Box::new(Literal {
-                        value: Some(2.into()),
-                    }),
-                }),
-                Box::new(If {
-                    cond: Box::new(Literal {
-                        value: Some(true.into()),
-                    }),
-                    then: Box::new(Literal {
-                        value: Some(3.into()),
-                    }),
-                    if_else: Some(Box::new(Literal {
-                        value: Some(1.into()),
-                    })),
-                }),
+        let expected4 = FunctionCall::new(
+            Identifier::new("d", Location::special()), // name
+            // args
+            vec![
+                Box::new(BinaryOp::new(
+                    Box::new(Literal::new(1, Location::special())), // left
+                    "+",                                            // right
+                    Box::new(Literal::new(2, Location::special())), // right
+                )),
+                Box::new(If::new(
+                    Box::new(Literal::new(true, Location::special())), // cond
+                    Box::new(Literal::new(3, Location::special())),    // then
+                    Some(Box::new(Literal::new(1, Location::special()))), // if_else
+                    Location::special(),                               // loc
+                )),
             ],
-        };
+        );
         assert_eq!(
             expected4,
             *p.parse()
@@ -345,15 +287,11 @@ mod test {
 
         let mut p: Parser = Parser::new(tokens);
 
-        let expected = BinaryOp {
-            left: Box::new(Literal {
-                value: Some(true.into()),
-            }),
-            op: "or".to_string(),
-            right: Box::new(Literal {
-                value: Some(false.into()),
-            }),
-        };
+        let expected = BinaryOp::new(
+            Box::new(Literal::new(true, Location::special())), // left
+            "or",                                              // op
+            Box::new(Literal::new(false, Location::special())), // right
+        );
 
         assert_eq!(
             expected,
@@ -374,57 +312,47 @@ mod test {
 
         let mut p: Parser = Parser::new(tokens);
 
-        let expected = If {
-            cond: Box::new(BinaryOp {
-                left: Box::new(BinaryOp {
-                    left: Box::new(Identifier {
-                        name: "a".to_string(),
-                    }),
-                    op: "==".to_string(),
-                    right: Box::new(BinaryOp {
-                        left: Box::new(Literal {
-                            value: Some(2.into()),
-                        }),
-                        op: "+".to_string(),
-                        right: Box::new(Literal {
-                            value: Some(2.into()),
-                        }),
-                    }),
-                }),
-                op: "or".to_string(),
-                right: Box::new(BinaryOp {
-                    left: Box::new(Identifier { name: "b".into() }),
-                    op: "==".into(),
-                    right: Box::new(BinaryOp {
-                        left: Box::new(Literal {
-                            value: Some(2.into()),
-                        }),
-                        op: "+".to_string(),
-                        right: Box::new(Literal {
-                            value: Some(2.into()),
-                        }),
-                    }),
-                }),
-            }),
-            then: Box::new(BinaryOp {
-                left: Box::new(Identifier {
-                    name: "a".to_string(),
-                }),
-                op: "+".to_string(),
-                right: Box::new(Literal {
-                    value: Some(2.into()),
-                }),
-            }),
-            if_else: Some(Box::new(BinaryOp {
-                left: Box::new(Identifier {
-                    name: "b".to_string(),
-                }),
-                op: "+".to_string(),
-                right: Box::new(Literal {
-                    value: Some(2.into()),
-                }),
-            })),
-        };
+        let expected = If::new(
+            // cond
+            Box::new(BinaryOp::new(
+                // left
+                Box::new(BinaryOp::new(
+                    Box::new(Identifier::new("a", Location::special())), // left
+                    "==",                                                // op
+                    // right
+                    Box::new(BinaryOp::new(
+                        Box::new(Literal::new(2, Location::special())), // left
+                        "+",                                            // op
+                        Box::new(Literal::new(2, Location::special())), // right
+                    )),
+                )),
+                "or", // op
+                // right
+                Box::new(BinaryOp::new(
+                    Box::new(Identifier::new("b", Location::special())), // left
+                    "==",                                                // op
+                    // right
+                    Box::new(BinaryOp::new(
+                        Box::new(Literal::new(2, Location::special())), // left
+                        "+",                                            // op
+                        Box::new(Literal::new(2, Location::special())), // right
+                    )),
+                )),
+            )),
+            // then
+            Box::new(BinaryOp::new(
+                Box::new(Identifier::new("a", Location::special())), // left
+                "+",                                                 // op
+                Box::new(Literal::new(2, Location::special())),      // right
+            )),
+            // if_else
+            Some(Box::new(BinaryOp::new(
+                Box::new(Identifier::new("b", Location::special())), // left
+                "+",                                                 // op
+                Box::new(Literal::new(2, Location::special())),      // right
+            ))),
+            Location::special(), // loc
+        );
 
         assert_eq!(
             expected,
@@ -436,27 +364,22 @@ mod test {
     fn test_binary_op_precedence() {
         let tokens = tokenize("a = 2 + 3 * 4", "file.txt");
         let mut p: Parser = Parser::new(tokens);
-        let expected = BinaryOp {
-            left: Box::new(Identifier {
-                name: "a".to_string(),
-            }),
-            op: "=".to_string(),
-            right: Box::new(BinaryOp {
-                left: Box::new(Literal {
-                    value: Some(2.into()),
-                }),
-                op: "+".to_string(),
-                right: Box::new(BinaryOp {
-                    left: Box::new(Literal {
-                        value: Some(3.into()),
-                    }),
-                    op: "*".to_string(),
-                    right: Box::new(Literal {
-                        value: Some(4.into()),
-                    }),
-                }),
-            }),
-        };
+        let expected = BinaryOp::new(
+            Box::new(Identifier::new("a", Location::special())), // left
+            "=",                                                 // op
+            // right
+            Box::new(BinaryOp::new(
+                Box::new(Literal::new(2, Location::special())), // left
+                "+",                                            // op
+                // right
+                Box::new(BinaryOp::new(
+                    Box::new(Literal::new(3, Location::special())), // left
+                    "*",                                            // op
+                    Box::new(Literal::new(4, Location::special())), // right
+                )),
+            )),
+        );
+
         assert_eq!(
             expected,
             *p.parse()
@@ -472,21 +395,16 @@ mod test {
         let tokens = tokenize("a = b = c", "file.txt");
         let mut p = Parser::new(tokens);
 
-        let expected = BinaryOp {
-            left: Box::new(Identifier {
-                name: "a".to_string(),
-            }),
-            op: "=".to_string(),
-            right: Box::new(BinaryOp {
-                left: Box::new(Identifier {
-                    name: "b".to_string(),
-                }),
-                op: "=".to_string(),
-                right: Box::new(Identifier {
-                    name: "c".to_string(),
-                }),
-            }),
-        };
+        let expected = BinaryOp::new(
+            Box::new(Identifier::new("a", Location::special())), // left
+            "=",                                                 // op
+            // right
+            Box::new(BinaryOp::new(
+                Box::new(Identifier::new("b", Location::special())), // left
+                "=",                                                 // op
+                Box::new(Identifier::new("c", Location::special())), // right
+            )),
+        );
 
         assert_eq!(
             expected,
@@ -505,39 +423,31 @@ mod test {
         let mut p1 = Parser::new(tokens1);
         let mut p2 = Parser::new(tokens2);
 
-        let expected1 = Block {
-            statements: vec![
-                Box::new(BinaryOp {
-                    left: Box::new(Identifier {
-                        name: "a".to_string(),
-                    }),
-                    op: "+".to_string(),
-                    right: Box::new(Identifier {
-                        name: "b".to_string(),
-                    }),
-                }),
-                Box::new(Identifier {
-                    name: "a".to_string(),
-                }),
+        let expected1 = Block::new(
+            // statements
+            vec![
+                Box::new(BinaryOp::new(
+                    Box::new(Identifier::new("a", Location::special())), // left
+                    "+",                                                 // op
+                    Box::new(Identifier::new("b", Location::special())), // right
+                )),
+                Box::new(Identifier::new("a", Location::special())), // result
             ],
-        };
-        let expected2 = Block {
-            statements: vec![
-                Box::new(BinaryOp {
-                    left: Box::new(Identifier {
-                        name: "a".to_string(),
-                    }),
-                    op: "+".to_string(),
-                    right: Box::new(Identifier {
-                        name: "b".to_string(),
-                    }),
-                }),
-                Box::new(Identifier {
-                    name: "a".to_string(),
-                }),
-                Box::new(Literal { value: None }),
+            Location::special(), // loc
+        );
+        let expected2 = Block::new(
+            // statements
+            vec![
+                Box::new(BinaryOp::new(
+                    Box::new(Identifier::new("a", Location::special())), // left
+                    "+",                                                 // op
+                    Box::new(Identifier::new("b", Location::special())), // right
+                )),
+                Box::new(Identifier::new("a", Location::special())),
+                Box::new(Literal::none(Location::special())), // result
             ],
-        };
+            Location::special(), // loc
+        );
 
         assert_eq!(
             expected1,
@@ -569,100 +479,82 @@ mod test {
                         x
                     } else {
                         g(x)
-                    };
+                    }
                     g(y);
-                };
+                }
                 123
             }",
             "file.txt",
         );
         let mut p = Parser::new(tokens);
 
-        let expected = Block {
-            statements: vec![
-                Box::new(While {
-                    cond: Box::new(FunctionCall {
-                        name: Identifier {
-                            name: "f".to_string(),
-                        },
-                        args: vec![],
-                    }),
-                    body: Box::new(Block {
-                        statements: vec![
-                            Box::new(BinaryOp {
-                                left: Box::new(Identifier {
-                                    name: "x".to_string(),
-                                }),
-                                op: "=".to_string(),
-                                right: Box::new(Literal {
-                                    value: Some(10.into()),
-                                }),
-                            }),
-                            Box::new(BinaryOp {
-                                left: Box::new(Identifier {
-                                    name: "y".to_string(),
-                                }),
-                                op: "=".to_string(),
-                                right: Box::new(If {
-                                    cond: Box::new(FunctionCall {
-                                        name: Identifier {
-                                            name: "g".to_string(),
-                                        },
-                                        args: vec![Box::new(Identifier {
-                                            name: "x".to_string(),
-                                        })],
-                                    }),
-                                    then: Box::new(Block {
-                                        statements: vec![
-                                            Box::new(BinaryOp {
-                                                left: Box::new(Identifier {
-                                                    name: "x".to_string(),
-                                                }),
-                                                op: "=".to_string(),
-                                                right: Box::new(BinaryOp {
-                                                    left: Box::new(Identifier {
-                                                        name: "x".to_string(),
-                                                    }),
-                                                    op: "+".to_string(),
-                                                    right: Box::new(Literal {
-                                                        value: Some(1.into()),
-                                                    }),
-                                                }),
-                                            }),
-                                            Box::new(Identifier {
-                                                name: "x".to_string(),
-                                            }),
+        let expected = Block::new(
+            vec![
+                Box::new(While::new(
+                    Box::new(FunctionCall::new(
+                        Identifier::new("f", Location::special()),
+                        vec![],
+                    )),
+                    Box::new(Block::new(
+                        vec![
+                            Box::new(BinaryOp::new(
+                                Box::new(Identifier::new("x", Location::special())),
+                                "=",
+                                Box::new(Literal::new(10, Location::special())),
+                            )),
+                            Box::new(BinaryOp::new(
+                                Box::new(Identifier::new("y", Location::special())),
+                                "=",
+                                Box::new(If::new(
+                                    Box::new(FunctionCall::new(
+                                        Identifier::new("g", Location::special()),
+                                        vec![Box::new(Identifier::new("x", Location::special()))],
+                                    )),
+                                    Box::new(Block::new(
+                                        vec![
+                                            Box::new(BinaryOp::new(
+                                                Box::new(Identifier::new("x", Location::special())),
+                                                "=",
+                                                Box::new(BinaryOp::new(
+                                                    Box::new(Identifier::new(
+                                                        "x",
+                                                        Location::special(),
+                                                    )),
+                                                    "+",
+                                                    Box::new(Literal::new(1, Location::special())),
+                                                )),
+                                            )),
+                                            Box::new(Identifier::new("x", Location::special())),
                                         ],
-                                    }),
-                                    if_else: Some(Box::new(Block {
-                                        statements: vec![Box::new(FunctionCall {
-                                            name: Identifier {
-                                                name: "g".to_string(),
-                                            },
-                                            args: vec![Box::new(Identifier {
-                                                name: "x".to_string(),
-                                            })],
-                                        })],
-                                    })),
-                                }),
-                            }),
-                            Box::new(FunctionCall {
-                                name: Identifier {
-                                    name: "g".to_string(),
-                                },
-                                args: vec![Box::new(Identifier {
-                                    name: "y".to_string(),
-                                })],
-                            }),
-                            Box::new(Literal { value: None }),
+                                        Location::special(),
+                                    )),
+                                    Some(Box::new(Block::new(
+                                        vec![Box::new(FunctionCall::new(
+                                            Identifier::new("g", Location::special()),
+                                            vec![Box::new(Identifier::new(
+                                                "x",
+                                                Location::special(),
+                                            ))],
+                                        ))],
+                                        Location::special(),
+                                    ))),
+                                    Location::special(),
+                                )),
+                            )),
+                            Box::new(FunctionCall::new(
+                                Identifier::new("g", Location::special()),
+                                vec![Box::new(Identifier::new("y", Location::special()))],
+                            )),
+                            Box::new(Literal::none(Location::special())),
                         ],
-                    }),
-                }),
-                Box::new(Literal {
-                    value: Some(123.into()),
-                }),
+                        Location::special(),
+                    )),
+                    Location::special(),
+                )),
+                Box::new(Literal::new(123, Location::special())),
             ],
-        };
+            Location::special(),
+        );
 
         assert_eq!(
             expected,
@@ -678,27 +570,20 @@ mod test {
         let tokens2 = tokenize("{ var x = 1; }", "file.txt");
         let mut p2 = Parser::new(tokens2);
 
-        let expected1 = VarDeclaration {
-            var: Identifier {
-                name: "x".to_string(),
-            },
-            initializer: Box::new(Literal {
-                value: Some(1.into()),
-            }),
-        };
-        let expected2 = Block {
-            statements: vec![
-                Box::new(VarDeclaration {
-                    var: Identifier {
-                        name: "x".to_string(),
-                    },
-                    initializer: Box::new(Literal {
-                        value: Some(1.into()),
-                    }),
-                }),
-                Box::new(Literal { value: None }),
+        let expected1 = VarDeclaration::new(
+            Identifier::new("x", Location::special()),
+            Box::new(Literal::new(1, Location::special())),
+        );
+        let expected2 = Block::new(
+            vec![
+                Box::new(VarDeclaration::new(
+                    Identifier::new("x", Location::special()),
+                    Box::new(Literal::new(1, Location::special())),
+                )),
+                Box::new(Literal::none(Location::special())),
             ],
-        };
+            Location::special(),
+        );
 
         assert_eq!(
             expected1,
@@ -740,14 +625,11 @@ mod test {
         let tokens = tokenize("while x do y", "file.txt");
         let mut p = Parser::new(tokens);
 
-        let expected = While {
-            cond: Box::new(Identifier {
-                name: "x".to_string(),
-            }),
-            body: Box::new(Identifier {
-                name: "y".to_string(),
-            }),
-        };
+        let expected = While::new(
+            Box::new(Identifier::new("x", Location::special())),
+            Box::new(Identifier::new("y", Location::special())),
+            Location::special(),
+        );
 
         assert_eq!(
             expected,
