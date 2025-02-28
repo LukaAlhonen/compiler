@@ -22,6 +22,13 @@ pub enum LiteralValue {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum VarType {
+    Int,
+    Bool,
+    Unit,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Literal {
     pub value: Option<LiteralValue>,
     pub loc: Location,
@@ -327,16 +334,22 @@ impl PartialEq for Block {
 #[derive(Debug)]
 pub struct VarDeclaration {
     pub var: Identifier,
+    pub declared_type: Option<VarType>,
     pub initializer: Box<dyn Expression>,
     pub loc: Location,
 }
 
 impl VarDeclaration {
-    pub fn new(var: Identifier, initializer: Box<dyn Expression>) -> Self {
+    pub fn new(
+        var: Identifier,
+        declared_type: Option<VarType>,
+        initializer: Box<dyn Expression>,
+    ) -> Self {
         VarDeclaration {
             loc: var.get_loc().clone(),
             var,
             initializer,
+            declared_type,
         }
     }
 }
@@ -351,7 +364,9 @@ impl Expression for VarDeclaration {
             .as_any()
             .downcast_ref::<VarDeclaration>()
             .map_or(false, |other| {
-                self.var.eq_expr(&other.var) && self.initializer.eq_expr(&*other.initializer)
+                self.var.eq_expr(&other.var)
+                    && self.initializer.eq_expr(&*other.initializer)
+                    && self.declared_type == other.declared_type
             })
     }
 
@@ -370,7 +385,9 @@ impl PartialEq for VarDeclaration {
             .as_any()
             .downcast_ref::<VarDeclaration>()
             .map_or(false, |other| {
-                self.var.eq_expr(&other.var) && self.initializer.eq_expr(&*other.initializer)
+                self.var.eq_expr(&other.var)
+                    && self.initializer.eq_expr(&*other.initializer)
+                    && self.declared_type == other.declared_type
             })
     }
 }
@@ -418,6 +435,57 @@ impl PartialEq for While {
             .downcast_ref::<While>()
             .map_or(false, |other| {
                 self.cond.eq_expr(&*other.cond) && self.body.eq_expr(&*other.body)
+            })
+    }
+}
+
+#[derive(Debug)]
+pub struct UnaryOp {
+    pub op: String,
+    pub right: Box<dyn Expression>,
+    pub loc: Location,
+}
+
+impl UnaryOp {
+    pub fn new<S: Into<String>>(op: S, right: Box<dyn Expression>, loc: Location) -> Self {
+        UnaryOp {
+            op: op.into(),
+            right,
+            loc,
+        }
+    }
+}
+
+impl Expression for UnaryOp {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq_expr(&self, other: &dyn Expression) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<UnaryOp>()
+            .map_or(false, |other| {
+                self.right.eq_expr(&*other.right) && self.op == other.op
+            })
+    }
+
+    fn is_block(&self) -> bool {
+        self.right.is_block()
+    }
+
+    fn get_loc(&self) -> &Location {
+        &self.loc
+    }
+}
+
+impl PartialEq for UnaryOp {
+    fn eq(&self, other: &Self) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<UnaryOp>()
+            .map_or(false, |other| {
+                self.right.eq_expr(&*other.right) && self.op == other.op
             })
     }
 }

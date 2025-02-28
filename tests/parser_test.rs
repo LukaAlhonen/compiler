@@ -570,12 +570,14 @@ mod test {
 
         let expected1 = VarDeclaration::new(
             Identifier::new("x", Location::special()),
+            None,
             Box::new(Literal::new(1, Location::special())),
         );
         let expected2 = Block::new(
             vec![
                 Box::new(VarDeclaration::new(
                     Identifier::new("x", Location::special()),
+                    None,
                     Box::new(Literal::new(1, Location::special())),
                 )),
                 Box::new(Literal::none(Location::special())),
@@ -703,6 +705,283 @@ mod test {
             result9.is_ok(),
             "9: expected expression but got {:?}",
             result9
+        );
+    }
+
+    #[test]
+    fn test_parse_unary() {
+        let tokens1 = tokenize("-1 and not x", "file.txt");
+        let mut p1 = Parser::new(tokens1);
+        let expected1 = BinaryOp::new(
+            Box::new(UnaryOp::new(
+                "-",
+                Box::new(Literal::new(1, Location::special())),
+                Location::special(),
+            )),
+            "and",
+            Box::new(UnaryOp::new(
+                "not",
+                Box::new(Identifier::new("x", Location::special())),
+                Location::special(),
+            )),
+        );
+
+        let tokens2 = tokenize("while not true do false", "file.txt");
+        let mut p2 = Parser::new(tokens2);
+        let expected2 = While::new(
+            Box::new(UnaryOp::new(
+                "not",
+                Box::new(Literal::new(true, Location::special())),
+                Location::special(),
+            )),
+            Box::new(Literal::new(false, Location::special())),
+            Location::special(),
+        );
+
+        let tokens3 = tokenize("if not true then x", "filte.txt");
+        let mut p3 = Parser::new(tokens3);
+        let expected3 = If::new(
+            Box::new(UnaryOp::new(
+                "not",
+                Box::new(Literal::new(true, Location::special())),
+                Location::special(),
+            )),
+            Box::new(Identifier::new("x", Location::special())),
+            None,
+            Location::special(),
+        );
+
+        let tokens4 = tokenize("not { true or false }", "file.txt");
+        let mut p4 = Parser::new(tokens4);
+        let expected4 = UnaryOp::new(
+            "not",
+            Box::new(Block::new(
+                vec![Box::new(BinaryOp::new(
+                    Box::new(Literal::new(true, Location::special())),
+                    "or",
+                    Box::new(Literal::new(false, Location::special())),
+                ))],
+                Location::special(),
+            )),
+            Location::special(),
+        );
+
+        let tokens5 = tokenize("-1 - -1", "file.txt");
+        let mut p5 = Parser::new(tokens5);
+        let expected5 = BinaryOp::new(
+            Box::new(UnaryOp::new(
+                "-",
+                Box::new(Literal::new(1, Location::special())),
+                Location::special(),
+            )),
+            "-",
+            Box::new(UnaryOp::new(
+                "-",
+                Box::new(Literal::new(1, Location::special())),
+                Location::special(),
+            )),
+        );
+
+        // test1
+        assert_eq!(
+            expected1,
+            *p1.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryOp>()
+                .unwrap()
+        );
+
+        // test2
+        assert_eq!(
+            expected2,
+            *p2.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<While>()
+                .unwrap()
+        );
+
+        // test3
+        assert_eq!(
+            expected3,
+            *p3.parse().unwrap().as_any().downcast_ref::<If>().unwrap()
+        );
+
+        // test4
+        assert_eq!(
+            expected4,
+            *p4.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UnaryOp>()
+                .unwrap()
+        );
+
+        // test5
+        assert_eq!(
+            expected5,
+            *p5.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryOp>()
+                .unwrap()
+        )
+    }
+
+    #[test]
+    fn test_parse_typed_var_declaration() {
+        let tokens1 = tokenize("var a: Int = 1", "file.txt");
+        let mut p1 = Parser::new(tokens1);
+        let expected1 = VarDeclaration::new(
+            Identifier::new("a", Location::special()),
+            Some(VarType::Int),
+            Box::new(Literal::new(1, Location::special())),
+        );
+
+        let tokens2 = tokenize("var b: Bool = true", "file.txt");
+        let mut p2 = Parser::new(tokens2);
+        let expected2 = VarDeclaration::new(
+            Identifier::new("b", Location::special()),
+            Some(VarType::Bool),
+            Box::new(Literal::new(true, Location::special())),
+        );
+
+        let tokens3 = tokenize("var c: Unit = {1 + 1}", "file.txt");
+        let mut p3 = Parser::new(tokens3);
+        let expected3 = VarDeclaration::new(
+            Identifier::new("c", Location::special()),
+            Some(VarType::Unit),
+            Box::new(Block::new(
+                vec![Box::new(BinaryOp::new(
+                    Box::new(Literal::new(1, Location::special())),
+                    "+",
+                    Box::new(Literal::new(1, Location::special())),
+                ))],
+                Location::special(),
+            )),
+        );
+
+        // test1
+        assert_eq!(
+            expected1,
+            *p1.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<VarDeclaration>()
+                .unwrap()
+        );
+
+        // test2
+        assert_eq!(
+            expected2,
+            *p2.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<VarDeclaration>()
+                .unwrap()
+        );
+
+        // test3
+        assert_eq!(
+            expected3,
+            *p3.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<VarDeclaration>()
+                .unwrap()
+        )
+    }
+
+    #[test]
+    fn parse_top_level_block() {
+        let tokens1 = tokenize(
+            "
+            1 + 1;
+            2+2;
+            {3+3}",
+            "file.txt",
+        );
+        let mut p1 = Parser::new(tokens1);
+        let expected1 = Block::new(
+            vec![
+                Box::new(BinaryOp::new(
+                    Box::new(Literal::new(1, Location::special())),
+                    "+",
+                    Box::new(Literal::new(1, Location::special())),
+                )),
+                Box::new(BinaryOp::new(
+                    Box::new(Literal::new(2, Location::special())),
+                    "+",
+                    Box::new(Literal::new(2, Location::special())),
+                )),
+                Box::new(Block::new(
+                    vec![Box::new(BinaryOp::new(
+                        Box::new(Literal::new(3, Location::special())),
+                        "+",
+                        Box::new(Literal::new(3, Location::special())),
+                    ))],
+                    Location::special(),
+                )),
+            ],
+            Location::special(),
+        );
+
+        let tokens2 = tokenize(
+            "
+            {1 + 1}
+            {2 + 2}
+            3 + 3;
+            ",
+            "file.txt",
+        );
+        let mut p2 = Parser::new(tokens2);
+        let expected2 = Block::new(
+            vec![
+                Box::new(Block::new(
+                    vec![Box::new(BinaryOp::new(
+                        Box::new(Literal::new(1, Location::special())),
+                        "+",
+                        Box::new(Literal::new(1, Location::special())),
+                    ))],
+                    Location::special(),
+                )),
+                Box::new(Block::new(
+                    vec![Box::new(BinaryOp::new(
+                        Box::new(Literal::new(2, Location::special())),
+                        "+",
+                        Box::new(Literal::new(2, Location::special())),
+                    ))],
+                    Location::special(),
+                )),
+                Box::new(BinaryOp::new(
+                    Box::new(Literal::new(3, Location::special())),
+                    "+",
+                    Box::new(Literal::new(3, Location::special())),
+                )),
+                Box::new(Literal::none(Location::special())),
+            ],
+            Location::special(),
+        );
+
+        // test1
+        assert_eq!(
+            expected1,
+            *p1.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Block>()
+                .unwrap()
+        );
+
+        // test2
+        assert_eq!(
+            expected2,
+            *p2.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Block>()
+                .unwrap()
         );
     }
 }

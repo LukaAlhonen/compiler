@@ -1,3 +1,5 @@
+use std::sync::OnceState;
+
 use super::ast::*;
 use super::tokenizer::{Location, Token, TokenType};
 use anyhow::{anyhow, Error, Result};
@@ -241,10 +243,29 @@ impl Parser {
             }));
         } else {
             let var = Identifier::new(token.text, token.loc);
+            let mut declared_type = None;
+            if self.peek().text == ":" {
+                self.consume()?;
+                let t = self.consume_expect(Expected::Multiple(vec![
+                    "Int".to_string(),
+                    "Bool".to_string(),
+                    "Unit".to_string(),
+                ]))?;
+
+                declared_type = if t.text == "Int" {
+                    Some(VarType::Int)
+                } else if t.text == "Bool" {
+                    Some(VarType::Bool)
+                } else {
+                    // No need to check for Unit anymore, consume_expect does the job already
+                    Some(VarType::Unit)
+                }
+            }
+
             self.consume_expect(Expected::Single("=".to_string()))?;
             let initializer = self.parse_binary_op()?;
 
-            Ok(VarDeclaration::new(var, initializer))
+            Ok(VarDeclaration::new(var, declared_type, initializer))
         }
     }
 
@@ -266,7 +287,6 @@ impl Parser {
             } else if expression.is_block() {
                 statements.push(expression);
             } else {
-                dbg!(expression);
                 return Err(anyhow!(ParserError::UnexpectedToken {
                     location: next_token.loc,
                     expected: "}".to_string(),
@@ -289,6 +309,16 @@ impl Parser {
         Ok(expr)
     }
 
+    fn parse_unary_op(&mut self) -> Result<UnaryOp, Error> {
+        let loc = self.peek().loc;
+        let op = self
+            .consume_expect(Expected::Multiple(vec!["not".to_string(), "-".to_string()]))?
+            .text;
+        let right = self.parse_factor()?;
+        let result = UnaryOp::new(op, right, loc);
+        Ok(result)
+    }
+
     // Get int literal, identifier or epxression in parenthises at current pos
     fn parse_factor(&mut self) -> Result<Box<dyn Expression>, Error> {
         let token: Token = self.peek();
@@ -297,6 +327,8 @@ impl Parser {
                 "{}: \"var\" is only allowed directly inside blocks and in top-level expressions",
                 token.loc.to_string()
             ))
+        } else if token.text == "-" || token.text == "not" {
+            Ok(Box::new(self.parse_unary_op()?))
         } else if token.text == "(" {
             Ok(self.parse_parenthesized()?)
         } else if token.text == "if" {
@@ -414,21 +446,49 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Box<dyn Expression>, Error> {
-        let expr = self.parse_expression()?;
-
-        // Make sure the whole input has been parsed, if it has then peek() will return End token
-        // If not, return error
-        let token: Token = self.peek();
-        if token.token_type != TokenType::End {
-            return Err(anyhow!(ParserError::UnexpectedToken {
-                location: token.loc,
-                expected: TokenType::End.to_string(),
-                found: token.text,
-            }));
+    fn parse_top_level_statements(
+        &mut self,
+        initializer: Box<dyn Expression>,
+    ) -> Result<Vec<Box<dyn Expression>>, Error> {
+        if !initializer.is_block() {
+            self.consume_expect(Expected::Single(";".to_string()))?;
         }
+        let mut statements: Vec<Box<dyn Expression>> = vec![initializer];
+        while self.peek().token_type != TokenType::End {
+            let expression = self.parse_expression()?;
+            let next_token = self.peek();
 
-        Ok(expr)
+            if next_token.text == ";" {
+                self.consume()?;
+                statements.push(expression);
+            } else if next_token.token_type == TokenType::End {
+                statements.push(expression);
+                return Ok(statements);
+            } else if expression.is_block() {
+                statements.push(expression);
+            } else {
+                return Err(anyhow!(ParserError::UnexpectedToken {
+                    location: next_token.loc,
+                    expected: ";".to_string(),
+                    found: next_token.text
+                }));
+            }
+        }
+        statements.push(Box::new(Literal::none(self.peek().loc)));
+        Ok(statements)
+    }
+
+    pub fn parse(&mut self) -> Result<Box<dyn Expression>, Error> {
+        let start_loc = self.peek().loc;
+        let expr = self.parse_expression()?;
+        let token = self.peek();
+
+        if token.token_type != TokenType::End {
+            let statements = self.parse_top_level_statements(expr)?;
+            Ok(Box::new(Block::new(statements, start_loc)))
+        } else {
+            Ok(expr)
+        }
     }
 }
 
@@ -604,5 +664,35 @@ mod test {
         );
 
         assert_eq!(p.peek().text, ";".to_string());
+    }
+
+    #[test]
+    fn test_parse_unary() {
+        let tokens = tokenize("not x", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        let expected = UnaryOp::new(
+            "not",
+            Box::new(Identifier::new("x", Location::special())),
+            Location::special(),
+        );
+
+        assert_eq!(
+            expected,
+            *p.parse()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UnaryOp>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_parse_identifier_panic() {
+        let tokens = tokenize("1abc = 10", "file.txt");
+        let mut p = Parser::new(tokens);
+
+        p.parse().unwrap();
     }
 }

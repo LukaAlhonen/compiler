@@ -282,4 +282,43 @@ mod test {
             ]
         );
     }
+
+    #[test]
+    fn test_tokenize_typed_var_declaration() {
+        let source_code = "var x: Int = 1";
+        let expected = vec![
+            Token {
+                text: "var".to_string(),
+                token_type: TokenType::Identifier,
+                loc: L::special(),
+            },
+            Token {
+                text: "x".to_string(),
+                token_type: TokenType::Identifier,
+                loc: L::special(),
+            },
+            Token {
+                text: ":".to_string(),
+                token_type: TokenType::Punctuation,
+                loc: L::special(),
+            },
+            Token {
+                text: "Int".to_string(),
+                token_type: TokenType::Identifier,
+                loc: L::special(),
+            },
+            Token {
+                text: "=".to_string(),
+                token_type: TokenType::Operator,
+                loc: L::special(),
+            },
+            Token {
+                text: "1".to_string(),
+                token_type: TokenType::Integer,
+                loc: L::special(),
+            },
+        ];
+
+        assert_eq!(tokenize(source_code, "file.txt"), expected);
+    }
 }

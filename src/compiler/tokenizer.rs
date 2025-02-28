@@ -70,7 +70,7 @@ pub fn tokenize(source_code: &str, file_name: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
 
     let re = Regex::new(
-        r"([a-zA-Z_]+[a-zA-Z0-9]*)|([0-9]+)|(\*|\+|\-|\/|==|!=|<=|>=|=|>|<)|([\(\)\[\]\{\}\,\;])",
+        r"([a-zA-Z_]+[a-zA-Z0-9]*)|([0-9]+)|(\*|\+|\-|\/|==|!=|<=|>=|=|>|<)|([\(\)\[\]\{\}\,\;\:])",
     )
     .unwrap();
 
