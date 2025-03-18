@@ -42,6 +42,7 @@ impl<'a, T: Clone + Debug> SymTab<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::Type;
 
     #[test]
     fn test_symtable() {
