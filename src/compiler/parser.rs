@@ -1,7 +1,6 @@
-use std::sync::OnceState;
-
 use super::ast::*;
 use super::tokenizer::{Location, Token, TokenType};
+use super::types::Type;
 use anyhow::{anyhow, Error, Result};
 
 enum Expected {
@@ -28,7 +27,7 @@ const PRECEDENCE_LEVELS: &[&[&str]] = &[
     &["==", "!="],
     &["<", "<=", ">", ">="],
     &["+", "-"],
-    &["*", "/", "&"],
+    &["*", "/", "%"],
 ];
 
 impl std::fmt::Display for ParserError {
@@ -133,7 +132,7 @@ impl Parser {
                 let int_val = self
                     .consume()?
                     .text
-                    .parse::<i32>()
+                    .parse::<i8>()
                     .map_err(|_| anyhow!(ParserError::InvalidInteger(token.text)))?;
                 Ok(Literal::new(int_val, token.loc))
             }
@@ -208,14 +207,14 @@ impl Parser {
         // Get rid of "then" token
         self.consume_expect(Expected::Single("then".to_string()))?;
         //
-        let then = self.parse_binary_op()?;
-        let if_else = if self.peek().text == "else".to_string() {
+        let then_branch = self.parse_binary_op()?;
+        let else_branch = if self.peek().text == "else".to_string() {
             self.consume_expect(Expected::Single("else".to_string()))?;
             Some(self.parse_binary_op()?)
         } else {
             None
         };
-        Ok(If::new(cond, then, if_else, loc))
+        Ok(If::new(cond, then_branch, else_branch, loc))
     }
 
     fn parse_while(&mut self) -> Result<While, Error> {
@@ -253,12 +252,12 @@ impl Parser {
                 ]))?;
 
                 declared_type = if t.text == "Int" {
-                    Some(VarType::Int)
+                    Some(Type::Int)
                 } else if t.text == "Bool" {
-                    Some(VarType::Bool)
+                    Some(Type::Bool)
                 } else {
                     // No need to check for Unit anymore, consume_expect does the job already
-                    Some(VarType::Unit)
+                    Some(Type::Unit)
                 }
             }
 
@@ -571,10 +570,7 @@ mod test {
         let tokens = tokenize("2 + 2", "file.txt");
         let mut p = Parser::new(tokens);
         assert_eq!(
-            Literal {
-                value: Some(2.into()),
-                loc: Location::special()
-            },
+            Literal::new(2, Location::special()),
             p.parse_int_literal().unwrap()
         );
     }
@@ -584,10 +580,7 @@ mod test {
         let tokens = tokenize("a + 1", "file.txt");
         let mut p = Parser::new(tokens);
         assert_eq!(
-            Identifier {
-                name: "a".to_string(),
-                loc: Location::special()
-            },
+            Identifier::new("a", Location::special()),
             p.parse_identifier().unwrap()
         );
     }
@@ -597,26 +590,15 @@ mod test {
         let tokens = tokenize("2 + (3 * 4)", "file.txt");
         let mut p = Parser::new(tokens);
 
-        let bin_op = BinaryOp {
-            left: Box::new(Literal {
-                value: Some(2.into()),
-                loc: Location::special(),
-            }),
-            op: "+".to_string(),
-            right: Box::new(BinaryOp {
-                left: Box::new(Literal {
-                    value: Some(3.into()),
-                    loc: Location::special(),
-                }),
-                op: "*".to_string(),
-                right: Box::new(Literal {
-                    value: Some(4.into()),
-                    loc: Location::special(),
-                }),
-                loc: Location::special(),
-            }),
-            loc: Location::special(),
-        };
+        let bin_op = BinaryOp::new(
+            Box::new(Literal::new(2, Location::special())),
+            "+",
+            Box::new(BinaryOp::new(
+                Box::new(Literal::new(3, Location::special())),
+                "*",
+                Box::new(Literal::new(4, Location::special())),
+            )),
+        );
 
         assert_eq!(
             bin_op,
@@ -641,18 +623,11 @@ mod test {
         let tokens = tokenize("a + b;", "file.txt");
         let mut p = Parser::new(tokens);
 
-        let expected = BinaryOp {
-            left: Box::new(Identifier {
-                name: "a".to_string(),
-                loc: Location::special(),
-            }),
-            op: "+".to_string(),
-            right: Box::new(Identifier {
-                name: "b".to_string(),
-                loc: Location::special(),
-            }),
-            loc: Location::special(),
-        };
+        let expected = BinaryOp::new(
+            Box::new(Identifier::new("a", Location::special())),
+            "+",
+            Box::new(Identifier::new("b", Location::special())),
+        );
 
         assert_eq!(
             expected,

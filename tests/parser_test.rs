@@ -1,6 +1,7 @@
 use compiler::compiler::ast::*;
 use compiler::compiler::parser::Parser;
 use compiler::compiler::tokenizer::*;
+use compiler::compiler::types::Type;
 
 #[cfg(test)]
 mod test {
@@ -97,7 +98,7 @@ mod test {
                 "+",                                                 // op
                 Box::new(Identifier::new("c", Location::special())), // right
             )),
-            None,                // if_else
+            None,                // else_branch
             Location::special(), // loc
         );
 
@@ -148,7 +149,7 @@ mod test {
             Box::new(If::new(
                 Box::new(Literal::new(true, Location::special())), // cond
                 Box::new(Literal::new(2, Location::special())),    // then
-                Some(Box::new(Literal::new(3, Location::special()))), // if_else
+                Some(Box::new(Literal::new(3, Location::special()))), // else_branch
                 Location::special(),                               // loc
             )),
         );
@@ -180,10 +181,10 @@ mod test {
             Box::new(If::new(
                 Box::new(Identifier::new("b", Location::special())), // cond
                 Box::new(Identifier::new("c", Location::special())), // then
-                Some(Box::new(Identifier::new("d", Location::special()))), // if_else
+                Some(Box::new(Identifier::new("d", Location::special()))), // else_branch
                 Location::special(),
             )),
-            Some(Box::new(Identifier::new("e", Location::special()))), // if_else
+            Some(Box::new(Identifier::new("e", Location::special()))), // else_branch
             Location::special(),                                       // loc
         );
 
@@ -264,7 +265,7 @@ mod test {
                 Box::new(If::new(
                     Box::new(Literal::new(true, Location::special())), // cond
                     Box::new(Literal::new(3, Location::special())),    // then
-                    Some(Box::new(Literal::new(1, Location::special()))), // if_else
+                    Some(Box::new(Literal::new(1, Location::special()))), // else_branch
                     Location::special(),                               // loc
                 )),
             ],
@@ -343,7 +344,7 @@ mod test {
                 "+",                                                 // op
                 Box::new(Literal::new(2, Location::special())),      // right
             )),
-            // if_else
+            // else_branch
             Some(Box::new(BinaryOp::new(
                 Box::new(Identifier::new("b", Location::special())), // left
                 "+",                                                 // op
@@ -835,7 +836,7 @@ mod test {
         let mut p1 = Parser::new(tokens1);
         let expected1 = VarDeclaration::new(
             Identifier::new("a", Location::special()),
-            Some(VarType::Int),
+            Some(Type::Int),
             Box::new(Literal::new(1, Location::special())),
         );
 
@@ -843,7 +844,7 @@ mod test {
         let mut p2 = Parser::new(tokens2);
         let expected2 = VarDeclaration::new(
             Identifier::new("b", Location::special()),
-            Some(VarType::Bool),
+            Some(Type::Bool),
             Box::new(Literal::new(true, Location::special())),
         );
 
@@ -851,7 +852,7 @@ mod test {
         let mut p3 = Parser::new(tokens3);
         let expected3 = VarDeclaration::new(
             Identifier::new("c", Location::special()),
-            Some(VarType::Unit),
+            Some(Type::Unit),
             Box::new(Block::new(
                 vec![Box::new(BinaryOp::new(
                     Box::new(Literal::new(1, Location::special())),
