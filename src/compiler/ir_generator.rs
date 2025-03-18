@@ -40,6 +40,15 @@ fn new_label(ins: &mut Vec<Box<dyn Instruction>>, base: &str, loc: Location) -> 
     }
 }
 
+// TODO:
+// - While
+// - Var declaration
+// - ==, !=
+// - unary
+// - short circuit and, or
+// - assignment
+// - function calls
+
 fn visit(
     st: &mut SymTab<IRVar>,
     expr: &Box<dyn Expression>,
@@ -97,7 +106,7 @@ fn visit(
             Some(else_branch) => {
                 let l_then = new_label(ins, "then", if_expr.then_branch.get_loc().clone());
                 let l_else = new_label(ins, "else", else_branch.get_loc().clone());
-                let l_end = new_label(ins, "if_end", Location::special()); // need to figure out what loc to assign here
+                let l_end = new_label(ins, "if_end", if_expr.loc.clone()); // need to figure out what loc to assign here
 
                 let var_cond = visit(st, &if_expr.cond, ins, var_types)?;
                 let if_var = new_var(if_expr.get_type().clone(), var_types);
@@ -158,6 +167,38 @@ fn visit(
                 });
             }
         }
+    } else if let Some(block) = expr.as_any().downcast_ref::<Block>() {
+        for statement in &block.statements {
+            visit(st, statement, ins, var_types)?;
+        }
+
+        let block_var = new_var(block.t.clone(), var_types);
+
+        Ok(block_var)
+    } else if let Some(while_statement) = expr.as_any().downcast_ref::<While>() {
+        let l_while = new_label(ins, "while_start", while_statement.loc.clone());
+        let l_body = new_label(ins, "while_body", while_statement.body.get_loc().clone());
+        let l_end = new_label(ins, "while_end", while_statement.loc.clone());
+
+        ins.push(Box::new(l_while.clone()));
+        let var_cond = visit(st, &while_statement.cond, ins, var_types)?;
+
+        ins.push(Box::new(CondJump::new(
+            var_cond,
+            l_body.clone(),
+            l_end.clone(),
+            loc.clone(),
+        )));
+
+        ins.push(Box::new(l_body));
+        visit(st, &while_statement.body, ins, var_types)?;
+
+        ins.push(Box::new(Jump::new(l_while, loc.clone())));
+        ins.push(Box::new(l_end));
+
+        Ok(IRVar {
+            name: "unit".to_string(),
+        })
     } else {
         return Err(anyhow!(
             "{}: Unknown expression {:?}",
@@ -199,15 +240,279 @@ pub fn generate_ir(
     Ok(ins)
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//     use crate::compiler::tokenizer;
-//     use crate::compiler::parser::*;
-//     use crate::compiler::type_checker;
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::compiler::parser::*;
+    use crate::compiler::tokenizer::tokenize;
+    use crate::compiler::type_checker::*;
 
-//     #[test]
-//     fn test_gen_if_ir() {
+    #[test]
+    fn test_gen_bin_op_ir() {
+        let tokens1 = tokenize("1 + 2 * 3", "file.txt");
+        let tokens2 = tokenize("1 + 2 * 3;", "file.txt");
 
-//     }
-// }
+        let mut p1 = Parser::new(tokens1);
+        let mut p2 = Parser::new(tokens2);
+
+        let mut parsed1 = p1.parse().unwrap();
+        let mut parsed2 = p2.parse().unwrap();
+
+        let mut st1: SymTab<Type> = SymTab::new();
+        let mut st2: SymTab<Type> = SymTab::new();
+
+        init_globals(&mut st1);
+        init_globals(&mut st2);
+
+        typecheck(&mut parsed1, &mut st1).unwrap();
+        typecheck(&mut parsed2, &mut st2).unwrap();
+
+        let mut root_types1: HashMap<IRVar, Type> = HashMap::new();
+        for (name, t) in st1.locals.iter() {
+            root_types1.insert(IRVar { name: name.clone() }, t.clone());
+        }
+        let mut root_types2: HashMap<IRVar, Type> = HashMap::new();
+        for (name, t) in st2.locals.iter() {
+            root_types2.insert(IRVar { name: name.clone() }, t.clone());
+        }
+
+        let ir1 = generate_ir(root_types1, parsed1).unwrap();
+        let ir2 = generate_ir(root_types2, parsed2).unwrap();
+
+        let expected1: Vec<Box<dyn Instruction>> = vec![
+            Box::new(LoadIntConst::new(
+                1,
+                IRVar {
+                    name: "x0".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(LoadIntConst::new(
+                2,
+                IRVar {
+                    name: "x1".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(LoadIntConst::new(
+                3,
+                IRVar {
+                    name: "x2".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(Call::new(
+                IRVar {
+                    name: "*".to_string(),
+                },
+                vec![
+                    IRVar {
+                        name: "x1".to_string(),
+                    },
+                    IRVar {
+                        name: "x2".to_string(),
+                    },
+                ],
+                IRVar {
+                    name: "x3".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(Call::new(
+                IRVar {
+                    name: "+".to_string(),
+                },
+                vec![
+                    IRVar {
+                        name: "x0".to_string(),
+                    },
+                    IRVar {
+                        name: "x3".to_string(),
+                    },
+                ],
+                IRVar {
+                    name: "x4".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(Call::new(
+                IRVar {
+                    name: "print_int".to_string(),
+                },
+                vec![IRVar {
+                    name: "x4".to_string(),
+                }],
+                IRVar {
+                    name: "x5".to_string(),
+                },
+                Location::special(),
+            )),
+        ];
+
+        let expected2: Vec<Box<dyn Instruction>> = vec![
+            Box::new(LoadIntConst::new(
+                1,
+                IRVar {
+                    name: "x0".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(LoadIntConst::new(
+                2,
+                IRVar {
+                    name: "x1".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(LoadIntConst::new(
+                3,
+                IRVar {
+                    name: "x2".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(Call::new(
+                IRVar {
+                    name: "*".to_string(),
+                },
+                vec![
+                    IRVar {
+                        name: "x1".to_string(),
+                    },
+                    IRVar {
+                        name: "x2".to_string(),
+                    },
+                ],
+                IRVar {
+                    name: "x3".to_string(),
+                },
+                Location::special(),
+            )),
+            Box::new(Call::new(
+                IRVar {
+                    name: "+".to_string(),
+                },
+                vec![
+                    IRVar {
+                        name: "x0".to_string(),
+                    },
+                    IRVar {
+                        name: "x3".to_string(),
+                    },
+                ],
+                IRVar {
+                    name: "x4".to_string(),
+                },
+                Location::special(),
+            )),
+        ];
+
+        for (actual, expected) in ir1.iter().zip(expected1.iter()) {
+            assert_eq!(actual.as_string(), expected.as_string());
+        }
+
+        for (actual, expected) in ir2.iter().zip(expected2.iter()) {
+            assert_eq!(actual.as_string(), expected.as_string());
+        }
+    }
+
+    #[test]
+    fn test_gen_if_ir() {
+        let source_code = "if true then false";
+        let tokens = tokenize(source_code, "file.txt");
+        let mut p = Parser::new(tokens);
+        let mut parsed = p.parse().unwrap();
+        let mut st = SymTab::new();
+        init_globals(&mut st);
+        typecheck(&mut parsed, &mut st).unwrap();
+        let mut root_types: HashMap<IRVar, Type> = HashMap::new();
+        for (name, t) in st.locals.iter() {
+            root_types.insert(IRVar { name: name.clone() }, t.clone());
+        }
+        let ir = generate_ir(root_types, parsed).unwrap();
+
+        let ir_string = ir
+            .iter()
+            .map(|arg| arg.as_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let expected = "LoadBoolConst(true, x0)
+CondJump(x0, Label(then), Label(if_end))
+Label(then)
+LoadBoolConst(false, x1)
+Label(if_end)"
+            .to_string();
+
+        assert_eq!(ir_string, expected);
+    }
+
+    #[test]
+    fn test_gen_if_else_ir() {
+        let source_code = "if true then false else true";
+        let tokens = tokenize(source_code, "file.txt");
+        let mut p = Parser::new(tokens);
+        let mut parsed = p.parse().unwrap();
+        let mut st = SymTab::new();
+        init_globals(&mut st);
+        typecheck(&mut parsed, &mut st).unwrap();
+        let mut root_types: HashMap<IRVar, Type> = HashMap::new();
+        for (name, t) in st.locals.iter() {
+            root_types.insert(IRVar { name: name.clone() }, t.clone());
+        }
+        let ir = generate_ir(root_types, parsed).unwrap();
+
+        let ir_string = ir
+            .iter()
+            .map(|arg| arg.as_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let expected = "LoadBoolConst(true, x0)
+CondJump(x0, Label(then), Label(else))
+Label(then)
+LoadBoolConst(false, x2)
+Copy(x2, x1)
+Jump(Label(if_end))
+Label(else)
+LoadBoolConst(true, x3)
+Copy(x3, x1)
+Label(if_end)
+Call(print_bool, [x1], x4)"
+            .to_string();
+        assert_eq!(ir_string, expected);
+    }
+
+    #[test]
+    fn test_gen_while_ir() {
+        let source_code = "while true do 1 + 1";
+        let tokens = tokenize(source_code, "file.txt");
+        let mut p = Parser::new(tokens);
+        let mut parsed = p.parse().unwrap();
+        let mut st = SymTab::new();
+        init_globals(&mut st);
+        typecheck(&mut parsed, &mut st).unwrap();
+        let mut root_types: HashMap<IRVar, Type> = HashMap::new();
+        for (name, t) in st.locals.iter() {
+            root_types.insert(IRVar { name: name.clone() }, t.clone());
+        }
+        let ir = generate_ir(root_types, parsed).unwrap();
+
+        let ir_string = ir
+            .iter()
+            .map(|arg| arg.as_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let expected = "Label(while_start)
+LoadBoolConst(true, x0)
+CondJump(x0, Label(while_body), Label(while_end))
+Label(while_body)
+LoadIntConst(1, x1)
+LoadIntConst(1, x2)
+Call(+, [x1, x2], x3)
+Jump(Label(while_start))
+Label(while_end)"
+            .to_string();
+        assert_eq!(ir_string, expected);
+    }
+}
